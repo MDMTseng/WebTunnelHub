@@ -21,23 +21,68 @@ if ((${#_hub_missing[@]})); then
 fi
 export SSH_TARGET SSH_KEY SSH_PORT HUB_DIR MAIN_CFG HUB_PUBLIC_URL
 
-# Avoid bash-only process substitution (< <(...)) so `sh hub-*.sh` on macOS POSIX sh still works.
-_hub_parse_tmp="$(python3 -c "
-import os, urllib.parse, sys
-u = urllib.parse.urlparse(os.environ.get('HUB_PUBLIC_URL', ''))
-if not u.hostname:
-    print('hub-common: HUB_PUBLIC_URL must include a hostname (e.g. https://db.example.com:1080)', file=sys.stderr)
-    sys.exit(1)
-port = u.port
-if port is None:
-    port = 443 if u.scheme == 'https' else 80
-print(u.scheme)
-print(u.hostname)
-print(port)
-")" || exit 1
-HUB_PUBLIC_SCHEME="$(printf '%s\n' "$_hub_parse_tmp" | sed -n '1p')"
-HUB_PUBLIC_HOST="$(printf '%s\n' "$_hub_parse_tmp" | sed -n '2p')"
-HUB_PUBLIC_PORT="$(printf '%s\n' "$_hub_parse_tmp" | sed -n '3p')"
+# Parse HUB_PUBLIC_URL (scheme, host, port) without Python — matches urllib defaults: https→443, else 80.
+hub_parse_public_url() {
+	local url="$HUB_PUBLIC_URL" scheme rest authority auth
+	local host port="" colon_count scheme_lc
+
+	if [[ ! "$url" =~ ^([a-zA-Z][a-zA-Z0-9+.-]*)://([^/]+) ]]; then
+		echo "hub-common: HUB_PUBLIC_URL must include a hostname (e.g. https://db.example.com:1080)" >&2
+		return 1
+	fi
+	scheme="${BASH_REMATCH[1]}"
+	rest="${BASH_REMATCH[2]}"
+	authority="${rest%%/*}"
+	if [[ -z "$authority" ]]; then
+		echo "hub-common: HUB_PUBLIC_URL must include a hostname (e.g. https://db.example.com:1080)" >&2
+		return 1
+	fi
+	if [[ "$authority" =~ @ ]]; then
+		auth="${authority##*@}"
+	else
+		auth="$authority"
+	fi
+	if [[ -z "$auth" ]]; then
+		echo "hub-common: HUB_PUBLIC_URL must include a hostname (e.g. https://db.example.com:1080)" >&2
+		return 1
+	fi
+
+	if [[ "$auth" =~ ^\[([^]]+)\](:([0-9]+))?$ ]]; then
+		host="${BASH_REMATCH[1]}"
+		port="${BASH_REMATCH[3]:-}"
+	elif [[ "$auth" == *:* ]]; then
+		colon_count=$(printf '%s' "$auth" | tr -cd ':' | wc -c | tr -d ' ')
+		if [[ "$colon_count" -eq 1 ]] && [[ "$auth" =~ ^(.+):([0-9]+)$ ]]; then
+			host="${BASH_REMATCH[1]}"
+			port="${BASH_REMATCH[2]}"
+		else
+			host="$auth"
+		fi
+	else
+		host="$auth"
+	fi
+
+	if [[ -z "$host" ]]; then
+		echo "hub-common: HUB_PUBLIC_URL must include a hostname (e.g. https://db.example.com:1080)" >&2
+		return 1
+	fi
+
+	scheme_lc="${scheme,,}"
+	if [[ -z "$port" ]]; then
+		if [[ "$scheme_lc" == "https" ]]; then
+			port=443
+		else
+			port=80
+		fi
+	fi
+
+	HUB_PUBLIC_SCHEME="$scheme_lc"
+	HUB_PUBLIC_HOST="$host"
+	HUB_PUBLIC_PORT="$port"
+	return 0
+}
+
+hub_parse_public_url || exit 1
 export HUB_PUBLIC_SCHEME HUB_PUBLIC_HOST HUB_PUBLIC_PORT
 
 # Hub apps use subdomains: https://AppName.${HUB_PUBLIC_HOST}:${HUB_PUBLIC_PORT}/
@@ -131,7 +176,21 @@ hub_validate_app_name() {
 	fi
 }
 
+# Zlib-compatible Adler-32 over bytes (ASCII app names per hub_validate_app_name).
+hub_zlib_adler32() {
+	local name="$1" s1=1 s2=0 MOD=65521 i c b
+	for ((i = 0; i < ${#name}; i++)); do
+		c="${name:i:1}"
+		b=$(printf '%d' "'${c}")
+		s1=$(( (s1 + b) % MOD ))
+		s2=$(( (s2 + s1) % MOD ))
+	done
+	printf '%u\n' "$(( (s2 * 65536 + s1) & 0xffffffff ))"
+}
+
 # Deterministic EC2 loopback port per app (20000–29999). Override with REMOTE_PORT when colliding.
 hub_remote_port() {
-	python3 -c 'import zlib,sys; n=sys.argv[1].encode(); print(20000 + (zlib.adler32(n) % 10000))' "$1"
+	local sum
+	sum=$(hub_zlib_adler32 "$1")
+	printf '%u\n' "$((20000 + sum % 10000))"
 }
