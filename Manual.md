@@ -2,6 +2,8 @@
 
 以下命令都在專案目錄 `Helloworld_web` 下執行。
 
+**Windows（PowerShell）**：已提供與 `hub-*.sh` 對應的腳本——`hub-common.ps1`、`hub-tunnel.ps1`、`hub-register.ps1`、`hub-unregister.ps1`、`hub-status.ps1`、`hub-applist.ps1`、`hub-ssh.ps1`。請先安裝 **OpenSSH 客戶端**（選用功能或 Git for Windows 內建），將 `.env` 中的 **`SSH_KEY`** 設為本機路徑（例如 `C:\Users\you\.ssh\key.pem` 或 `C:/Users/you/.ssh/key.pem`），並在必要時執行 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`。用法範例：`.\hub-register.ps1 CoolAPP`、`.\hub-tunnel.ps1 -Port 5654 CoolAPP`。
+
 ---
 
 ## 應用（App）生命週期
