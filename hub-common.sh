@@ -21,7 +21,29 @@ if ((${#_hub_missing[@]})); then
 fi
 export SSH_TARGET SSH_KEY SSH_PORT HUB_DIR MAIN_CFG HUB_PUBLIC_URL
 
-# App names become URL path segments: ${HUB_PUBLIC_URL}/AppName/
+# Avoid bash-only process substitution (< <(...)) so `sh hub-*.sh` on macOS POSIX sh still works.
+_hub_parse_tmp="$(python3 -c "
+import os, urllib.parse, sys
+u = urllib.parse.urlparse(os.environ.get('HUB_PUBLIC_URL', ''))
+if not u.hostname:
+    print('hub-common: HUB_PUBLIC_URL must include a hostname (e.g. https://db.example.com:1080)', file=sys.stderr)
+    sys.exit(1)
+port = u.port
+if port is None:
+    port = 443 if u.scheme == 'https' else 80
+print(u.scheme)
+print(u.hostname)
+print(port)
+")" || exit 1
+HUB_PUBLIC_SCHEME="$(printf '%s\n' "$_hub_parse_tmp" | sed -n '1p')"
+HUB_PUBLIC_HOST="$(printf '%s\n' "$_hub_parse_tmp" | sed -n '2p')"
+HUB_PUBLIC_PORT="$(printf '%s\n' "$_hub_parse_tmp" | sed -n '3p')"
+export HUB_PUBLIC_SCHEME HUB_PUBLIC_HOST HUB_PUBLIC_PORT
+
+# Hub apps use subdomains: https://AppName.${HUB_PUBLIC_HOST}:${HUB_PUBLIC_PORT}/
+hub_app_public_url() {
+	printf '%s://%s.%s:%s/\n' "${HUB_PUBLIC_SCHEME}" "$1" "${HUB_PUBLIC_HOST}" "${HUB_PUBLIC_PORT}"
+}
 
 hub_ssh_host() {
 	echo "${SSH_TARGET#*@}"

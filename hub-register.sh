@@ -6,7 +6,7 @@
 # Usage: ./hub-register.sh [--force] <AppName>
 #   --force  Overwrite existing /etc/caddy/hub-routes/<AppName>.caddy (still reloads Caddy only if write succeeds).
 #
-# Remote needs: Caddy site imports HUB_DIR/*.caddy (see Caddyfile.ec2.example). Configure SSH/HUB_* in `.env`.
+# Remote needs: top-level "import HUB_DIR/*.caddy" + root site (see Caddyfile.ec2.example). Configure SSH/HUB_* in `.env`.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -45,20 +45,19 @@ fi
 SNIPPET=$(
 	cat <<EOF
 # ${APP_NAME} -> 127.0.0.1:${REMOTE_PORT} (run: ./hub-tunnel.sh --port <local> ${APP_NAME})
-handle /${APP_NAME} {
-	redir /${APP_NAME}/ permanent
-}
-handle_path /${APP_NAME}/* {
+${APP_NAME}.${HUB_PUBLIC_HOST}:${HUB_PUBLIC_PORT} {
 	reverse_proxy 127.0.0.1:${REMOTE_PORT}
 }
 EOF
 )
 
-echo "Registering ${HUB_PUBLIC_URL}/${APP_NAME}/ -> EC2 127.0.0.1:${REMOTE_PORT}"
+echo "Registering $(hub_app_public_url "${APP_NAME}") (Host: ${APP_NAME}.${HUB_PUBLIC_HOST}:${HUB_PUBLIC_PORT}) -> EC2 127.0.0.1:${REMOTE_PORT}"
 echo "--- snippet ---"
 echo "$SNIPPET"
 echo "---"
-echo "Ensure ${MAIN_CFG} site block includes: import ${HUB_DIR}/*.caddy"
+echo "Ensure ${MAIN_CFG} matches Caddyfile.ec2.example: root site ${HUB_PUBLIC_HOST}:${HUB_PUBLIC_PORT} { handle { reverse_proxy 127.0.0.1:10080 } }"
+echo "  and a top-level line (outside that block): import ${HUB_DIR}/*.caddy"
+echo "DNS: ${APP_NAME}.${HUB_PUBLIC_HOST} (or wildcard *.${HUB_PUBLIC_HOST}) must resolve to this server."
 echo ""
 
 ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes "$SSH_TARGET" \

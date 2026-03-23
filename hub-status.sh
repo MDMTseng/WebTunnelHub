@@ -27,7 +27,7 @@ else
 fi
 
 echo ""
-echo "=== EC2：Caddy 已注册路径（磁盘上的配置；与隧道是否开启无关）==="
+echo "=== EC2：Caddy 已注册子域路由（磁盘上的配置；与隧道是否开启无关）==="
 # shellcheck disable=SC2087
 ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=15 "$SSH_TARGET" \
 	"export HUB_DIR=$(printf '%q' "$HUB_DIR"); bash -s" <<'REMOTE' || true

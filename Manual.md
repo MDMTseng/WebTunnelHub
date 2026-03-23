@@ -2,13 +2,13 @@
 
 以下命令都在專案目錄 `Helloworld_web` 下執行。
 
-**Windows（PowerShell）**：已提供與 `hub-*.sh` 對應的腳本——`hub-common.ps1`、`hub-tunnel.ps1`、`hub-register.ps1`、`hub-unregister.ps1`、`hub-status.ps1`、`hub-applist.ps1`、`hub-ssh.ps1`。請先安裝 **OpenSSH 客戶端**（選用功能或 Git for Windows 內建），將 `.env` 中的 **`SSH_KEY`** 設為本機路徑（例如 `C:\Users\you\.ssh\key.pem` 或 `C:/Users/you/.ssh/key.pem`），並在必要時執行 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`。用法範例：`.\hub-register.ps1 CoolAPP`、`.\hub-tunnel.ps1 -Port 5654 CoolAPP`。
+**Windows**：請在 **Git Bash**、**WSL**，或任何含 **`bash`** 與 **`ssh`** 的環境執行下方相同的 **`./hub-*.sh`**（需安裝 OpenSSH；Git for Windows 通常已含）。`.env` 的 **`SSH_KEY`** 可用正斜線路徑，例如 **`C:/Users/you/.ssh/key.pem`**。
 
 ---
 
 ## 應用（App）生命週期
 
-一個 **Hub 應用** 指：在 EC2 的 Caddy 上有一條 **`/應用名/`** 路由，且本機有一條 **`ssh -R`** 把 EC2 上對應回環埠轉到本機某 HTTP 服務。建議依序理解為下列階段。
+一個 **Hub 應用** 指：在 EC2 的 Caddy 上有一個 **`應用名.根域:埠`** 站點（子域），且本機有一條 **`ssh -R`** 把 EC2 上對應回環埠轉到本機某 HTTP 服務。建議依序理解為下列階段。
 
 | 階段 | 說明 | 典型命令／狀態 |
 |------|------|----------------|
@@ -16,7 +16,7 @@
 | **1. 註冊（一次性）** | 在 EC2 寫入 **`${HUB_DIR}/<AppName>.caddy`** 並 **`caddy reload`**；**不**建立 SSH | `./hub-register.sh <AppName>` |
 | **2. 本機服務** | 本機 HTTP 監聽（例如 **`serve.py`**），埠須與隧道一致 | `PORT=5654 python3 serve.py` |
 | **3. 隧道（常駐）** | 本機執行 **`hub-tunnel.sh --port <本機埠> <AppName>`**，讓 EC2 **`127.0.0.1:<遠端埠>`** 連到本機 | 終端保持開啟或改 **`nohup`** 等 |
-| **4. 運行中** | 瀏覽器開 **`${HUB_PUBLIC_URL}/<AppName>/`**；斷線／休眠會中斷對外服務 | `./hub-status.sh` 自查 |
+| **4. 運行中** | 瀏覽器開 **`https://<AppName>.<根域>:<埠>/`**（由 **`HUB_PUBLIC_URL`** 解析根域與埠）；斷線／休眠會中斷對外服務 | `./hub-status.sh` 自查 |
 | **5. 暫停** | 關掉本機 **`hub-tunnel`**（與可選關 **`serve.py`**）；EC2 上 **Caddy 片段可保留**（下次只重開隧道） | Ctrl+C 或殺 **`ssh`** |
 | **6. 註銷（下架）** | 刪 EC2 路由檔並 reload；預設一併殺本機對該埠的 **`ssh -R`** | `./hub-unregister.sh <AppName>` |
 
@@ -87,11 +87,11 @@ cd /path/to/Helloworld_web
 ## 3. 瀏覽器
 
 ```text
-${HUB_PUBLIC_URL}/CoolAPP/
-# 例如 https://db.xception.tech:1080/CoolAPP/
+https://CoolAPP.db.xception.tech:1080/
+# 根域與埠來自 HUB_PUBLIC_URL，例如 HUB_PUBLIC_URL=https://db.xception.tech:1080
 ```
 
-（建議網址結尾加 **`/`**。）
+（建議網址結尾加 **`/`**；DNS 須有 **`CoolAPP.db.xception.tech`** 或泛解析 **`*.db.xception.tech`**。）
 
 ---
 
@@ -137,8 +137,8 @@ ${HUB_PUBLIC_URL}/CoolAPP/
 | **`SSH_KEY`** | 本機私鑰路徑（**`-i`** 傳給 **`ssh`**） |
 | **`SSH_PORT`** | SSH 埠（數字，例如 **`22`**） |
 | **`HUB_DIR`** | EC2 上 Hub 片段目錄（例如 **`/etc/caddy/hub-routes`**），內含 **`*.caddy`** |
-| **`MAIN_CFG`** | EC2 上 Caddy 主設定路徑（例如 **`/etc/caddy/Caddyfile`**），須 **`import ${HUB_DIR}/*.caddy`**（或等效） |
-| **`HUB_PUBLIC_URL`** | 瀏覽器實際使用的 HTTPS 前綴（**無尾隨斜線**），僅用於腳本提示與註冊輸出，例如 **`https://域名:1080`** |
+| **`MAIN_CFG`** | EC2 上 Caddy 主設定路徑（例如 **`/etc/caddy/Caddyfile`**），佈局須與 **`Caddyfile.ec2.example`** 一致：根站點塊 + **頂層** **`import ${HUB_DIR}/*.caddy`** |
+| **`HUB_PUBLIC_URL`** | 根站 HTTPS URL（**無尾隨路徑**），例如 **`https://db.xception.tech:1080`**；腳本由此解析主機名與埠，應用網址為 **`https://<AppName>.<該主機名>:<埠>/`** |
 
 **應用名規則**（**`hub-register` / `hub-tunnel` / `hub-unregister`** 皆會驗證）：長度最多 **48** 字元；第一字元須為英文或數字；其餘可為英文、數字、**`_`**、**`-`**。正則概念：`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,47}$`。
 
@@ -156,7 +156,7 @@ python3 -c "import zlib; n=b'CoolAPP'; print(20000+zlib.adler32(n)%10000)"
 
 ### `hub-register.sh`
 
-在 EC2 建立 **`${HUB_DIR}/<AppName>.caddy`**（含 **`handle` / `handle_path` / `reverse_proxy`**），必要時建立 **`_keep.caddy`**，然後 **`caddy validate` + `systemctl reload caddy`**。**不會**停止或修改既有 SSH。
+在 EC2 建立 **`${HUB_DIR}/<AppName>.caddy`**（獨立站點塊 **`<AppName>.<主機名>:<埠> { reverse_proxy … }`**），必要時建立 **`_keep.caddy`**，然後 **`caddy validate` + `systemctl reload caddy`**。**不會**停止或修改既有 SSH。
 
 **語法：**
 

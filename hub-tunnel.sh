@@ -3,7 +3,7 @@
 #
 # Default (no app name): EC2 127.0.0.1:10080 -> local :8080 (Caddy root -> 10080).
 # Hub: ./hub-tunnel.sh --port 3422 CoolApp  ->  EC2 127.0.0.1:<derived> -> local :3422
-#   Register Caddy path once: ./hub-register.sh CoolApp
+#   Register Caddy subdomain once: ./hub-register.sh CoolApp
 #
 # Direct HTTP on EC2 :1080 (no Caddy): REMOTE_BIND=0.0.0.0 REMOTE_PORT=1080 ./hub-tunnel.sh
 set -euo pipefail
@@ -57,7 +57,7 @@ done
 if [[ -n "$APP_NAME" ]]; then
 	hub_validate_app_name "$APP_NAME" || exit 1
 	REMOTE_PORT="${REMOTE_PORT:-$(hub_remote_port "$APP_NAME")}"
-	echo "Hub app '${APP_NAME}': ${HUB_PUBLIC_URL}/${APP_NAME}/"
+	echo "Hub app '${APP_NAME}': $(hub_app_public_url "${APP_NAME}")"
 	echo "EC2 loopback ${REMOTE_PORT} -> local 127.0.0.1:${LOCAL_PORT}"
 	echo "If not done yet: ./hub-register.sh ${APP_NAME}"
 else
