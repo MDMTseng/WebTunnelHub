@@ -38,13 +38,39 @@ hub_kill_tunnels_for_remote_port() {
 	local remote="$1"
 	local host pids
 	host="$(hub_ssh_host)"
-	pids=$(ps aux 2>/dev/null | grep -E '[s]sh ' | grep -F "$host" | grep -F -- '-R' | grep -F "127.0.0.1:${remote}:127.0.0.1" | awk '{print $2}' | sort -u)
+	# Disable pipefail for this subshell: grep exits 1 when no tunnel matches (normal when unregistering).
+	pids=$(
+		set +o pipefail 2>/dev/null || true
+		ps aux 2>/dev/null | grep -E '[s]sh ' | grep -F "$host" | grep -F -- '-R' | grep -F "127.0.0.1:${remote}:127.0.0.1" | awk '{print $2}' | sort -u
+	)
 	[[ -z "$pids" ]] && return 0
 	echo "Stopping local SSH tunnel(s) for EC2 127.0.0.1:${remote} (PIDs: $pids)" >&2
 	for pid in $pids; do
 		kill "$pid" 2>/dev/null || true
 	done
 	sleep 0.7
+}
+
+# On EC2: kill whatever is listening on TCP :remote (the sshd session for -R 127.0.0.1:remote:...).
+# That terminates the tunnel from the server side; the local ssh client exits. Uses sudo (fuser/lsof).
+# Port must be digits only. Ignores ssh failures so unregister can still remove Caddy files.
+hub_kill_tunnel_listener_on_ec2() {
+	local remote="$1"
+	[[ "$remote" =~ ^[0-9]+$ ]] || return 0
+	echo "EC2: tearing down tunnel listener on port ${remote} (drops client SSH if connected)." >&2
+	# shellcheck disable=SC2087
+	ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=15 "$SSH_TARGET" \
+		"export RPORT=$(printf '%s' "$remote"); bash -s" <<'REMOTE' || true
+set +e
+if command -v fuser >/dev/null 2>&1; then
+	sudo fuser -k "${RPORT}/tcp" 2>/dev/null || true
+fi
+if command -v lsof >/dev/null 2>&1; then
+	for p in $(sudo lsof -t -iTCP:"${RPORT}" -sTCP:LISTEN 2>/dev/null); do
+		sudo kill "$p" 2>/dev/null || true
+	done
+fi
+REMOTE
 }
 
 hub_local_http_ok() {

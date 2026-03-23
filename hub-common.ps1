@@ -116,6 +116,38 @@ function Stop-HubTunnelForRemotePort {
   Start-Sleep -Seconds 0.7
 }
 
+# On EC2: kill TCP listener on :RemotePort (usually sshd for -R). Drops the client SSH session. sudo + fuser/lsof.
+function Stop-HubTunnelListenerOnEc2 {
+  param(
+    [Parameter(Mandatory)]
+    [ValidateRange(1, 65535)]
+    [int]$RemotePort
+  )
+  Write-Host "EC2: tearing down tunnel listener on port $RemotePort (drops client SSH if connected)." -ForegroundColor Cyan
+  $tpl = @'
+if command -v fuser >/dev/null 2>&1; then
+  sudo fuser -k __PORT__/tcp 2>/dev/null || true
+fi
+if command -v lsof >/dev/null 2>&1; then
+  for p in $(sudo lsof -t -iTCP:__PORT__ -sTCP:LISTEN 2>/dev/null); do
+    sudo kill "$p" 2>/dev/null || true
+  done
+fi
+'@
+  $bashBody = $tpl.Replace('__PORT__', [string]$RemotePort)
+  $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bashBody))
+  $inner = "printf '%s' '$b64' | base64 -d | bash"
+  $wrapped = 'sudo sh -c ' + (ConvertTo-BashSingleQuoted $inner)
+  [void](Invoke-HubSshBatch -Arguments @(
+      '-p', $env:SSH_PORT,
+      '-i', $env:SSH_KEY,
+      '-o', 'BatchMode=yes',
+      '-o', 'ConnectTimeout=15',
+      $env:SSH_TARGET,
+      $wrapped
+    ))
+}
+
 function Test-HubLocalHttp {
   param([int]$Port)
   try {
@@ -178,4 +210,34 @@ function Invoke-HubRemoteBashScript {
     throw "ssh remote bash failed (exit $exit)"
   }
   return $exit
+}
+
+# Run remote bash via base64 pipe; return stdout as a single string (stderr discarded). Throws if ssh/bash exits non-zero.
+function Invoke-HubRemoteBashStdout {
+  param([Parameter(Mandatory)][string]$BashScript)
+  $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($BashScript))
+  $remote = "printf '%s' '$b64' | base64 -d | bash"
+  $exe = Get-HubSshExecutable
+  $prevEa = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $stdout = & $exe @(
+      '-p', $env:SSH_PORT,
+      '-i', $env:SSH_KEY,
+      '-o', 'BatchMode=yes',
+      '-o', 'ConnectTimeout=15',
+      $env:SSH_TARGET,
+      $remote
+    ) 2>$null
+  }
+  finally {
+    $ErrorActionPreference = $prevEa
+  }
+  if (-not $?) {
+    $code = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } else { 'unknown' }
+    throw "ssh remote bash failed (exit $code)"
+  }
+  if ($null -eq $stdout) { return '' }
+  if ($stdout -is [array]) { return (($stdout -join "`n").Trim()) }
+  return [string]$stdout
 }
