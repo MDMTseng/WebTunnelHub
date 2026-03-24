@@ -239,8 +239,6 @@ def _urls_html_list() -> str:
 def _hub_tunnel_list_html() -> str:
     """HTML block: registered Hub apps with public URL links and registration notes."""
     rows, err = _fetch_registered_tunnels()
-    env = _merged_config_env()
-    pub = (env.get("HUB_PUBLIC_URL") or "").strip()
 
     parts = [
         '<h2 style="margin-top:1.5rem;font-size:1.15rem;font-weight:600">'
@@ -250,14 +248,6 @@ def _hub_tunnel_list_html() -> str:
         "<code>EC2 Caddy registered subdomain routes</code> section of "
         "<code>hub-status.sh</code> (same data as <a href=\"/status\">/status</a>).</p>"
     ]
-
-    if pub:
-        root = pub.rstrip("/") + "/"
-        parts.append(
-            "<p>Root site (default <code>hub-tunnel.sh</code> without app name): "
-            '<a href="%s" rel="noopener noreferrer"><code>%s</code></a></p>'
-            % (html.escape(root), html.escape(root))
-        )
 
     if err:
         parts.append('<p style="color:#666">%s</p>' % html.escape(err))

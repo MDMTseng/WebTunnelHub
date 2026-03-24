@@ -3,6 +3,8 @@
 This guide is for **people who run the Hub** day to day: expose a local web app on the internet through the tunnel.  
 First-time server setup, security groups, and Caddy install are in **`SETUP.md`** (简体中文). Extra detail in Traditional Chinese: **`Manual.md`**.
 
+**Use a Hub app URL for every new service** — for example `https://myapp.yourhub.example.com:1080/`. **Do not** rely on the bare root URL `https://yourhub.example.com:1080/` or on running the tunnel script **without** an app name; that path is **legacy only** (see **`SETUP.md`**).
+
 ---
 
 ## What you need on your machine

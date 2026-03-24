@@ -121,7 +121,7 @@ else
 fi
 
 echo ""
-echo "=== Inferred active tunnel names (from -R remote port; 10080 = default site) ==="
+echo "=== Inferred active tunnel names (from -R remote port; 10080 = legacy root path) ==="
 if [[ -z "$_tunnel_ps" ]]; then
 	echo "(None)"
 else
@@ -140,7 +140,7 @@ else
 		[[ -n "${_hub_seen_rport[$rport]:-}" ]] && continue
 		_hub_seen_rport[$rport]=1
 		if [[ "$rport" == "10080" ]]; then
-			printf '%s (local %s)\n' "default" "$lport"
+			printf '%s (local %s)\n' "legacy-root" "$lport"
 			continue
 		fi
 		_matched=()
@@ -183,7 +183,7 @@ fi
 echo ""
 echo "Legend:"
 echo "  - Registered names come from .caddy filenames on EC2; list is lowercased for display; on-disk case affects hub_remote_port."
-echo "  - Inferred tunnel names map -R remote ports to hub_remote_port; REMOTE_PORT overrides may show as unmatched."
+echo "  - Inferred tunnel names map -R remote ports to hub_remote_port; port 10080 is shown as legacy-root (discouraged for new services); REMOTE_PORT overrides may show as unmatched."
 echo "  - A port under LISTEN usually means an SSH reverse forward is bound on EC2."
 echo "  - Registered routes mean Caddy will reverse_proxy to that port; without a listener, browsers may fail or time out."
 echo "  - Trailing \"# ...\" is from hub-register.sh --note (Registration note in the snippet)."

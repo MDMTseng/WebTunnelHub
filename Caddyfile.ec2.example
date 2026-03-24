@@ -1,5 +1,9 @@
-# EC2 main Caddy config: HTTPS on :1080, root site + per-app subdomains from hub-routes/.
+# EC2 main Caddy config: HTTPS on :1080, per-app subdomains from hub-routes/.
 # Copy to /etc/caddy/Caddyfile (adjust db.xception.tech to your HUB_PUBLIC_URL host).
+#
+# Prefer every service as a Hub app (hub-register.sh + hub-tunnel.sh with AppName).
+# The handle/reverse_proxy to 127.0.0.1:10080 below is a legacy fallback for the bare
+# host (https://db.xception.tech:1080/); do not rely on it for new deployments.
 #
 # Hub apps are registered as separate site blocks: AppName.db.xception.tech:1080
 # (see hub-register.sh). The import must be TOP-LEVEL — not inside the root site block.

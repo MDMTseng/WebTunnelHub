@@ -4,6 +4,8 @@
 
 **Windows**：請在 **Git Bash**、**WSL**，或任何含 **`bash`** 與 **`ssh`** 的環境執行下方相同的 **`./hub-*.sh`**（需安裝 OpenSSH；Git for Windows 通常已含）。`.env` 的 **`SSH_KEY`** 可用正斜線路徑，例如 **`C:/Users/you/.ssh/key.pem`**。
 
+**政策（與 `SETUP.md` 一致）：** **不推薦**新服務依賴 **`https://根域:1080/`** 根路徑或 **`./hub-tunnel.sh`** 不帶應用名（**10080**）。**新應用請一律走 Hub 子域**（**`hub-register.sh`** + **`hub-tunnel.sh --port … AppName`**）。
+
 ---
 
 ## 應用（App）生命週期
@@ -20,7 +22,7 @@
 | **5. 暫停** | 關掉本機 **`hub-tunnel`**（與可選關 **`serve.py`**）；EC2 上 **Caddy 片段可保留**（下次只重開隧道） | Ctrl+C 或殺 **`ssh`** |
 | **6. 註銷（下架）** | 刪 EC2 路由檔並 reload；預設一併殺本機對該埠的 **`ssh -R`** | `./hub-unregister.sh <AppName>` |
 
-**根站（非子路徑）**：不帶應用名執行 **`./hub-tunnel.sh`**，將本機 **`PORT`／8080** 對到 EC2 **`127.0.0.1:10080`**，由主 **`Caddyfile`** 的 **`handle`** 接 **`/`**；無需 **`hub-register.sh`**。
+**遺留根路徑（不推薦新依賴）**：不帶應用名執行 **`./hub-tunnel.sh`**，將本機 **`PORT`／8080** 對到 EC2 **`127.0.0.1:10080`**，由主 **`Caddyfile`** 的 **`handle`** 接 **`/`**；無需 **`hub-register.sh`**。僅供維護舊環境；**新服務請用 Hub 子域**。
 
 ```mermaid
 flowchart LR
@@ -83,7 +85,7 @@ cd /path/to/WebTunnelHub
 ```bash
 cd /path/to/WebTunnelHub
 ./hub-serve-tunnel.sh --port 5654 coolapp
-# 根站（無子域應用名）：
+# 遺留（無 AppName，不推薦新用途）：
 # ./hub-serve-tunnel.sh
 ```
 
@@ -139,7 +141,7 @@ https://coolapp.db.xception.tech:1080/
 
 1. **已註冊的應用名**（來自檔名；畫面上為小寫排序，實際檔名大小寫與 **`hub_remote_port`** 雜湊一致）。
 2. 本機指向 **`SSH_TARGET`** 且含 **`-R`** 的 **`ssh`** 行程。
-3. **本機活動隧道名**：由 **`-R`** 的遠端埠對照 **`hub_remote_port`** 反查（**`10080`** 顯示為 **`default`**）；若註冊時用 **`REMOTE_PORT`** 覆寫埠，可能顯示「未匹配」。
+3. **本機活動隧道名**：由 **`-R`** 的遠端埠對照 **`hub_remote_port`** 反查（**`10080`** 顯示為 **`legacy-root`**）；若註冊時用 **`REMOTE_PORT`** 覆寫埠，可能顯示「未匹配」。
 4. EC2 上 **10080** 與 **20000–29999** 相關 **LISTEN**。
 5. **Caddy 子域路由**：每行 **`reverse_proxy`** 摘要；若片段含 **`# Registration note:`** 註解（由 **`hub-register.sh --note`** 寫入），會在行末以 **`# …`** 附帶顯示。
 
@@ -171,8 +173,8 @@ https://coolapp.db.xception.tech:1080/
 | **`SSH_KEY`** | 本機私鑰路徑（**`-i`** 傳給 **`ssh`**） |
 | **`SSH_PORT`** | SSH 埠（數字，例如 **`22`**） |
 | **`HUB_DIR`** | EC2 上 Hub 片段目錄（例如 **`/etc/caddy/hub-routes`**），內含 **`*.caddy`** |
-| **`MAIN_CFG`** | EC2 上 Caddy 主設定路徑（例如 **`/etc/caddy/Caddyfile`**），佈局須與 **`Caddyfile.ec2.example`** 一致：根站點塊 + **頂層** **`import ${HUB_DIR}/*.caddy`** |
-| **`HUB_PUBLIC_URL`** | 根站 HTTPS URL（**無尾隨路徑**），例如 **`https://db.xception.tech:1080`**；腳本由此解析主機名與埠，應用網址為 **`https://<AppName>.<該主機名>:<埠>/`** |
+| **`MAIN_CFG`** | EC2 上 Caddy 主設定路徑（例如 **`/etc/caddy/Caddyfile`**），佈局須與 **`Caddyfile.ec2.example`** 一致：TLS 站點塊（可含**遺留** **10080** `handle`）+ **頂層** **`import ${HUB_DIR}/*.caddy`** |
+| **`HUB_PUBLIC_URL`** | 公網 HTTPS **基底** URL（**無尾隨路徑**），例如 **`https://db.xception.tech:1080`**；腳本由此解析主機名與埠，**推薦**應用網址為 **`https://<AppName>.<該主機名>:<埠>/`**（勿把根路徑當新服務主入口） |
 
 **應用名規則**
 
@@ -232,7 +234,7 @@ python3 -c "import zlib; n=b'coolapp'; print(20000+zlib.adler32(n)%10000)"
 
 | 參數 | 說明 |
 |------|------|
-| **（無應用名）** | **根站模式**：本機 **`LOCAL_PORT`**（見下）→ EC2 **`127.0.0.1:10080`**（**`REMOTE_PORT`** 預設 **10080**）。 |
+| **（無應用名）** | **遺留根路徑**（不推薦新用途）：本機 **`LOCAL_PORT`**（見下）→ EC2 **`127.0.0.1:10080`**（**`REMOTE_PORT`** 預設 **10080**）。 |
 | **`<AppName>`** | **Hub 應用模式**：本機 **`LOCAL_PORT`** → EC2 **`127.0.0.1:<REMOTE_PORT>`**；**`REMOTE_PORT`** 預設由應用名推算。 |
 | **`--port` / `-p`** | 本機 HTTP 服務埠；未指定時 **`LOCAL_PORT`** 取自環境變數 **`PORT`**，再預設 **8080**。 |
 | **`--help` / `-h`** | 印出用法後以 **`0`** 退出。 |
@@ -243,7 +245,7 @@ python3 -c "import zlib; n=b'coolapp'; print(20000+zlib.adler32(n)%10000)"
 |------------------|------|
 | **`PORT`** | 無 **`-p/--port`** 時的本機埠（預設 **8080**）。 |
 | **`REMOTE_BIND`** | SSH **`-R`** 在 EC2 上的綁定位址，預設 **`127.0.0.1`**。設 **`0.0.0.0`** 可讓非本機連線打到該埠（需 **`sshd`**／防火牆允許；常與直連 HTTP 測試一併討論，見 **`SETUP.md`**）。 |
-| **`REMOTE_PORT`** | 覆寫 EC2 側轉發埠。Hub 模式預設為 **`hub_remote_port(AppName)`**；根站模式預設 **10080**。 |
+| **`REMOTE_PORT`** | 覆寫 EC2 側轉發埠。Hub 模式預設為 **`hub_remote_port(AppName)`**；遺留無應用名時預設 **10080**。 |
 
 **結束代碼：** 誤用參數為 **`1`**；成功則**不返回**（**`exec ssh`**），直到 SSH 結束。
 
@@ -276,7 +278,7 @@ python3 -c "import zlib; n=b'coolapp'; print(20000+zlib.adler32(n)%10000)"
 
 1. **已註冊應用名**（來自 **`.caddy`** 檔名；列表為小寫排序，實際檔名大小寫與 **`hub_remote_port`** 一致）。
 2. 本機含 **`-R`** 且目標主機為 **`SSH_TARGET`** 的 **`ssh`** 行程。
-3. **活動隧道名**：解析 **`-R`** 遠端埠；**`10080`** 對應根站 **`default`**；其餘埠與已註冊名稱的 **`hub_remote_port`** 比對（同埠可能對應多個僅大小寫不同的舊檔名時會並列）。曾用 **`REMOTE_PORT`** 覆寫者可能無法對上。
+3. **活動隧道名**：解析 **`-R`** 遠端埠；**`10080`** 對應**遺留根路徑** **`legacy-root`**；其餘埠與已註冊名稱的 **`hub_remote_port`** 比對（同埠可能對應多個僅大小寫不同的舊檔名時會並列）。曾用 **`REMOTE_PORT`** 覆寫者可能無法對上。
 4. EC2 上 **10080** 與 **20000–29999** 區間相關 **LISTEN**（**`127.0.0.1`**）。
 5. **Caddy 子域路由**：每個片段的 **`reverse_proxy`** 首行摘要；若檔案含 **`# Registration note:`**（**`hub-register.sh --note`**），附於該行末尾 **`# …`**。
 

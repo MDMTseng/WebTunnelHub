@@ -5,7 +5,7 @@
 # Logs: logs/hub-serve-<app|root>.log
 #
 # Usage:
-#   ./hub-serve-tunnel.sh                    Root site: PORT/8080 -> EC2 10080 (see hub-tunnel.sh)
+#   ./hub-serve-tunnel.sh                    Legacy: PORT/8080 -> EC2 10080 without AppName (discouraged; see hub-tunnel.sh)
 #   ./hub-serve-tunnel.sh myapp            serve.py on 8080 + tunnel for Hub app myapp
 #   ./hub-serve-tunnel.sh --port 5654 myapp
 set -euo pipefail
@@ -17,7 +17,7 @@ source "${SCRIPT_DIR}/hub-common.sh"
 usage() {
 	cat <<'EOF'
 Usage:
-  ./hub-serve-tunnel.sh                     Default site: serve.py :8080 + tunnel -> EC2 :10080
+  ./hub-serve-tunnel.sh                     Legacy: serve.py :8080 + tunnel -> EC2 :10080 (no AppName; discouraged)
   ./hub-serve-tunnel.sh <AppName>         serve.py :8080 + Hub tunnel for <AppName>
   ./hub-serve-tunnel.sh --port 5654 <App> Custom local port (register the same name first)
 
@@ -104,7 +104,7 @@ if [[ -n "$APP_NAME" ]]; then
 	echo "hub-serve-tunnel: ensure ./hub-register.sh --note '…' ${APP_NAME} was run once on EC2." >&2
 	"${SCRIPT_DIR}/hub-tunnel.sh" --port "$LOCAL_PORT" "$APP_NAME" || _tunnel_ec=$?
 else
-	echo "hub-serve-tunnel: local OK; starting default tunnel -> EC2 ${REMOTE_BIND:-127.0.0.1}:10080" >&2
+	echo "hub-serve-tunnel: local OK; starting legacy root tunnel -> EC2 ${REMOTE_BIND:-127.0.0.1}:10080 (prefer passing AppName)" >&2
 	"${SCRIPT_DIR}/hub-tunnel.sh" --port "$LOCAL_PORT" || _tunnel_ec=$?
 fi
 cleanup
