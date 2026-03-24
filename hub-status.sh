@@ -51,7 +51,9 @@ for f in "${files[@]}"; do
 			break
 		fi
 	done < "$f"
-	[[ -n "$reg_note" ]] && printf 'M\t%s\t%s\n' "${b,,}" "$reg_note"
+	if [[ -n "$reg_note" ]]; then
+		printf 'M\t%s\t%s\n' "${b,,}" "$reg_note"
+	fi
 	rp=$(grep -E '^\s*reverse_proxy\s+' "$f" | head -1 | sed 's/^[[:space:]]*//')
 	rp="${rp//$'\t'/ }"
 	printf 'R\t%s\t%s\n' "${b,,}" "${rp:-(no reverse_proxy line found)}"
