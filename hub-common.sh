@@ -23,6 +23,18 @@ if ((${#_hub_missing[@]})); then
 fi
 export SSH_TARGET SSH_KEY SSH_PORT HUB_DIR MAIN_CFG HUB_PUBLIC_URL
 
+# Git Bash / MSYS / MinGW: Windows PATH often puts System32 before usr/bin, so `sort -u`
+# runs sort.exe (fails / wrong flags) instead of GNU sort — breaks hub-status, hub-applist, etc.
+hub_msys_prepend_path() {
+	case "${OSTYPE:-}" in
+	msys* | cygwin* | mingw*)
+		PATH="/usr/bin:/bin:${PATH:-}"
+		export PATH
+		;;
+	esac
+}
+hub_msys_prepend_path
+
 # Parse scheme, host, and port from HUB_PUBLIC_URL (no Python).
 hub_parse_public_url() {
 	local url="$HUB_PUBLIC_URL" scheme rest authority auth
@@ -99,7 +111,7 @@ hub_ssh_host() {
 # True if local ps shows ssh with -R forwarding EC2 127.0.0.1:remote -> this host.
 hub_reverse_tunnel_active() {
 	local remote="$1"
-	ps aux 2>/dev/null | grep -E '[s]sh ' | grep -F "$(hub_ssh_host)" | grep -F -- '-R' | grep -q "127.0.0.1:${remote}:127.0.0.1"
+	ps aux 2>/dev/null | grep -E '[s]sh(\.exe)? ' | grep -F "$(hub_ssh_host)" | grep -F -- '-R' | grep -q "127.0.0.1:${remote}:127.0.0.1"
 }
 
 # Stop local ssh client(s) for EC2 127.0.0.1:remote -> this machine (hub-unregister).
@@ -110,7 +122,7 @@ hub_kill_tunnels_for_remote_port() {
 	# Disable pipefail: grep exit 1 when no tunnel matches is normal.
 	pids=$(
 		set +o pipefail 2>/dev/null || true
-		ps aux 2>/dev/null | grep -E '[s]sh ' | grep -F "$host" | grep -F -- '-R' | grep -F "127.0.0.1:${remote}:127.0.0.1" | awk '{print $2}' | sort -u
+		ps aux 2>/dev/null | grep -E '[s]sh(\.exe)? ' | grep -F "$host" | grep -F -- '-R' | grep -F "127.0.0.1:${remote}:127.0.0.1" | awk '{print $2}' | sort -u
 	)
 	[[ -z "$pids" ]] && return 0
 	echo "hub-common: stopping local SSH tunnel(s) for EC2 127.0.0.1:${remote} -> localhost (PIDs: ${pids})" >&2

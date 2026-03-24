@@ -282,6 +282,8 @@ python3 -c "import zlib; n=b'coolapp'; print(20000+zlib.adler32(n)%10000)"
 
 底部「解读」說明各欄位與限制。
 
+**Windows（Git Bash）：** **`hub-common.sh`** 會把 **`/usr/bin`** 放到 **`PATH`** 前面，避免 **`sort -u`** 誤用 **`sort.exe`**（曾導致已註冊名稱區塊異常與尾端亂碼錯誤）。本機 **`ssh`** 列會同時匹配 **`ssh.exe`**。若仍顯示「本機無 **`-R`**」但 EC2 有 **LISTEN**，多半是隧道在**另一台電腦**上，或 **`ssh`** 由非 Git Bash 環境啟動且 **`ps`** 看不到完整命令列。
+
 ---
 
 ### `hub-applist.sh`

@@ -110,7 +110,8 @@ fi
 
 echo ""
 echo "=== Local ssh processes to ${SSH_TARGET} with -R ==="
-_tunnel_ps="$(ps aux 2>/dev/null | grep -E "[s]sh .*" | grep -F -- "$HOST_ONLY" | grep -F -- '-R' | grep -v grep || true)"
+# Match `ssh` or `ssh.exe` (Windows); avoid Windows sort.exe via hub_msys_prepend_path in hub-common.sh
+_tunnel_ps="$(ps aux 2>/dev/null | grep -E '[s]sh(\.exe)? ' | grep -F -- "$HOST_ONLY" | grep -F -- '-R' || true)"
 if [[ -n "$_tunnel_ps" ]]; then
 	printf '%s\n' "$_tunnel_ps"
 else
