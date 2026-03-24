@@ -1,38 +1,30 @@
 #!/usr/bin/env bash
-# Demo only: hub-serve register + example/serve.py :8080 + tunnel (no unregister — run hub-unregister.sh when done).
+# Local HTTP (example/serve.py), then Hub register + SSH tunnel (hub-managed-tunnel.sh).
 set -euo pipefail
+
+SCRIPT_TAG='example/start.sh'
+APP_NAME='hub-serve'
+REGISTER_NOTE='Demo hub serve dashboard'
+PORT="${PORT:-8080}"
+
 R="$(cd "$(dirname "$0")/.." && pwd)" && cd "$R" && source ./hub-common.sh
 
-set +e
-./hub-register.sh --note 'Demo hub serve dashboard' hub-serve
-_reg=$?
-set -e
-if [[ "$_reg" -eq 2 ]]; then
-	echo "example/start.sh: hub-serve is already registered on the hub." >&2
-	echo "  Remove the existing route, then run this script again:  ./hub-unregister.sh hub-serve" >&2
-	exit 2
-fi
-if [[ "$_reg" -ne 0 ]]; then
-	echo "example/start.sh: hub-register.sh failed (exit ${_reg}). Check .env, SSH key, and SSH_TARGET." >&2
-	exit "$_reg"
-fi
+_PY="$(command -v python3 || command -v python)" || { echo "${SCRIPT_TAG}: need python3 or python in PATH." >&2; exit 1; }
 
-if command -v python3 >/dev/null 2>&1; then
-	_PY=python3
-elif command -v python >/dev/null 2>&1; then
-	_PY=python
-else
-	echo "example/start.sh: need python3 or python in PATH." >&2
+PORT="$PORT" "$_PY" example/serve.py &
+SERVE_PID=$!
+cleanup_serve() {
+	kill "$SERVE_PID" 2>/dev/null || true
+	wait "$SERVE_PID" 2>/dev/null || true
+}
+# When hub-managed-tunnel exits (tunnel closed, killed, or SSH drops), we exit too and this trap stops serve.py.
+trap cleanup_serve EXIT
+
+if ! hub_wait_local_http "$PORT" 30; then
+	echo "${SCRIPT_TAG}: local HTTP on :${PORT} never became ready (serve.py may have crashed or failed to bind)." >&2
 	exit 1
 fi
 
-PORT=8080 "$_PY" example/serve.py &
-SERVE_PID=$!
-trap 'kill "$SERVE_PID" 2>/dev/null; wait "$SERVE_PID" 2>/dev/null || true' EXIT
-hub_wait_local_http 8080 30
 _ec=0
-./hub-tunnel.sh --port 8080 hub-serve || _ec=$?
-trap - EXIT
-kill "$SERVE_PID" 2>/dev/null || true
-wait "$SERVE_PID" 2>/dev/null || true
+./hub-managed-tunnel.sh --name "$APP_NAME" --note "$REGISTER_NOTE" --port "$PORT" || _ec=$?
 exit "$_ec"
