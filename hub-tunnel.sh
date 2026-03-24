@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Reverse SSH tunnel to EC2 (Hub or single default site).
+# hub-tunnel.sh — SSH reverse tunnel from this machine to EC2 (default site or Hub app).
 #
-# Default (no app name): EC2 127.0.0.1:10080 -> local :8080 (Caddy root -> 10080).
-# Hub: ./hub-tunnel.sh --port 3422 CoolApp  ->  EC2 127.0.0.1:<derived> -> local :3422
-#   Register Caddy subdomain once: ./hub-register.sh CoolApp
+# No app name: local 127.0.0.1:PORT (default 8080) -> EC2 REMOTE_BIND:10080 (Caddy root).
+# With app name: local port -> EC2 REMOTE_BIND:hub_remote_port(AppName) (run hub-register first).
 #
-# Direct HTTP on EC2 :1080 (no Caddy): REMOTE_BIND=0.0.0.0 REMOTE_PORT=1080 ./hub-tunnel.sh
+# Direct HTTP on EC2 :1080 without Caddy: REMOTE_BIND=0.0.0.0 REMOTE_PORT=1080 ./hub-tunnel.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -18,12 +17,12 @@ usage() {
 	cat <<'EOF'
 Usage:
   ./hub-tunnel.sh                          Default site: local PORT/8080 -> EC2 127.0.0.1:10080
-  ./hub-tunnel.sh --port 3422 CoolApp     Hub app:      local 3422       -> EC2 127.0.0.1:<auto>
-  ./hub-tunnel.sh CoolApp --port 3422     Same (flags and name order flexible)
+  ./hub-tunnel.sh --port 3422 myapp        Hub app: local 3422 -> EC2 127.0.0.1:<derived>
+  ./hub-tunnel.sh myapp --port 3422        Same (flags and app name order are flexible)
 
 Environment:
   See `.env` / `.env.example` for SSH_TARGET, SSH_KEY, SSH_PORT, HUB_PUBLIC_URL.
-  PORT, REMOTE_BIND, REMOTE_PORT (override auto port for Hub)
+  Optional: PORT, REMOTE_BIND, REMOTE_PORT (override Hub auto port)
 EOF
 }
 
@@ -33,7 +32,10 @@ APP_NAME=""
 while [[ $# -gt 0 ]]; do
 	case "$1" in
 		-p | --port)
-			[[ -n "${2:-}" ]] || { echo "Missing value for $1"; exit 1; }
+			if [[ -z "${2:-}" ]]; then
+				echo "hub-tunnel: $1 requires a port value." >&2
+				exit 1
+			fi
 			LOCAL_PORT="$2"
 			shift 2
 			;;
@@ -42,12 +44,16 @@ while [[ $# -gt 0 ]]; do
 			exit 0
 			;;
 		-*)
-			echo "Unknown option: $1" >&2
+			echo "hub-tunnel: unknown option: $1" >&2
 			usage >&2
 			exit 1
 			;;
 		*)
-			[[ -z "$APP_NAME" ]] || { echo "Extra argument: $1" >&2; exit 1; }
+			if [[ -n "$APP_NAME" ]]; then
+				echo "hub-tunnel: unexpected argument: $1" >&2
+				usage >&2
+				exit 1
+			fi
 			APP_NAME="$1"
 			shift
 			;;
@@ -57,15 +63,16 @@ done
 if [[ -n "$APP_NAME" ]]; then
 	hub_validate_app_name "$APP_NAME" || exit 1
 	REMOTE_PORT="${REMOTE_PORT:-$(hub_remote_port "$APP_NAME")}"
-	echo "Hub app '${APP_NAME}': $(hub_app_public_url "${APP_NAME}")"
-	echo "EC2 loopback ${REMOTE_PORT} -> local 127.0.0.1:${LOCAL_PORT}"
-	echo "If not done yet: ./hub-register.sh ${APP_NAME}"
+	echo "hub-tunnel: Hub app '${APP_NAME}' public URL $(hub_app_public_url "${APP_NAME}")"
+	echo "hub-tunnel: forward EC2 127.0.0.1:${REMOTE_PORT} -> local 127.0.0.1:${LOCAL_PORT}"
+	echo "hub-tunnel: if not registered yet, run ./hub-register.sh with an all-lowercase name matching this tunnel."
 else
 	REMOTE_PORT="${REMOTE_PORT:-10080}"
-	echo "Default site: local 127.0.0.1:${LOCAL_PORT} -> EC2 ${REMOTE_BIND}:${REMOTE_PORT}"
+	echo "hub-tunnel: default site: local 127.0.0.1:${LOCAL_PORT} -> EC2 ${REMOTE_BIND}:${REMOTE_PORT}"
 fi
 
-echo "SSH ${SSH_TARGET} (leave running). Direct mode: REMOTE_BIND=0.0.0.0 REMOTE_PORT=1080 $0"
+echo "hub-tunnel: connecting to ${SSH_TARGET} (keep this process running; public access stops if it exits)."
+echo "hub-tunnel: for raw HTTP tests: REMOTE_BIND=0.0.0.0 REMOTE_PORT=1080 $0"
 echo ""
 
 exec ssh -N \

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Show Hub-related state: local SSH reverse tunnels + EC2 listeners + registered Caddy routes.
-# Usage: ./hub-status.sh
-# Config: `.env` (loaded via hub-common.sh)
+# hub-status.sh — Summarize Hub state: registered apps, local ssh -R, inferred tunnel names, EC2 listeners, Caddy routes.
+#
+# No arguments. Requires non-interactive SSH to EC2.
+# One remote read of ${HUB_DIR}/*.caddy; failures are reported in the relevant sections.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -10,16 +11,22 @@ source "${SCRIPT_DIR}/hub-common.sh"
 
 HOST_ONLY="$(hub_ssh_host)"
 
-# Print SSH / empty-dir failure for the single EC2 fetch below. Returns 0 if printed, 1 if data is usable.
+# Print fetch error for the Caddy snapshot. Returns 0 if a message was printed, 1 if data is usable.
 _hub_status_caddy_fetch_error() {
 	case "${_hub_caddy_state:-}" in
-		ssh_fail) echo "(无法 SSH 到服务器)" ;;
-		no_files) echo "(目录无 .caddy 文件: ${_hub_no_dir})" ;;
-		*) return 1 ;;
+		ssh_fail)
+			echo "(Could not connect or remote command failed; check network, key, and SSH_TARGET.)"
+			;;
+		no_files)
+			echo "(No .caddy files under ${HUB_DIR}.)"
+			;;
+		*)
+			return 1
+			;;
 	esac
 }
 
-# One EC2 round-trip: app names (for hub_remote_port) + route lines for display.
+# Single SSH: per .caddy file emit app name, optional Registration note, reverse_proxy summary
 set +e
 _hub_caddy_out="$(
 	ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=15 "$SSH_TARGET" \
@@ -47,7 +54,7 @@ for f in "${files[@]}"; do
 	[[ -n "$reg_note" ]] && printf 'M\t%s\t%s\n' "${b,,}" "$reg_note"
 	rp=$(grep -E '^\s*reverse_proxy\s+' "$f" | head -1 | sed 's/^[[:space:]]*//')
 	rp="${rp//$'\t'/ }"
-	printf 'R\t%s\t%s\n' "${b,,}" "${rp:-(无 reverse_proxy 行)}"
+	printf 'R\t%s\t%s\n' "${b,,}" "${rp:-(no reverse_proxy line found)}"
 done
 REMOTE
 )"
@@ -89,7 +96,7 @@ _hub_caddy_state=ok
 ((_caddy_ec != 0)) && _hub_caddy_state=ssh_fail
 [[ "$_hub_caddy_state" == ok && -n "$_hub_no_dir" ]] && _hub_caddy_state=no_files
 
-echo "=== 已注册的 tunnel（应用）名（EC2 上 ${HUB_DIR}/*.caddy）==="
+echo "=== Registered tunnel (app) names (${HUB_DIR}/*.caddy on EC2) ==="
 if _hub_status_caddy_fetch_error; then
 	:
 elif [[ -n "$REGISTERED_APPS" ]]; then
@@ -98,22 +105,22 @@ elif [[ -n "$REGISTERED_APPS" ]]; then
 		printf '%s\n' "${_n,,}"
 	done <<<"$REGISTERED_APPS" | sort -u
 else
-	echo "(无已注册应用)"
+	echo "(No registered apps.)"
 fi
 
 echo ""
-echo "=== 本机：指向 ${SSH_TARGET} 且含 -R 的 ssh 进程 ==="
+echo "=== Local ssh processes to ${SSH_TARGET} with -R ==="
 _tunnel_ps="$(ps aux 2>/dev/null | grep -E "[s]sh .*" | grep -F -- "$HOST_ONLY" | grep -F -- '-R' | grep -v grep || true)"
 if [[ -n "$_tunnel_ps" ]]; then
 	printf '%s\n' "$_tunnel_ps"
 else
-	echo "(未发现；若隧道在另一台电脑或未运行，此处为空)"
+	echo "(None found; tunnel may run on another machine or not be up.)"
 fi
 
 echo ""
-echo "=== 本机活动 tunnel 名（由 -R 端口推断；10080 = 默认站点）==="
+echo "=== Inferred active tunnel names (from -R remote port; 10080 = default site) ==="
 if [[ -z "$_tunnel_ps" ]]; then
-	echo "(无)"
+	echo "(None)"
 else
 	declare -A _hub_seen_rport=()
 	while IFS= read -r pline || [[ -n "$pline" ]]; do
@@ -130,7 +137,7 @@ else
 		[[ -n "${_hub_seen_rport[$rport]:-}" ]] && continue
 		_hub_seen_rport[$rport]=1
 		if [[ "$rport" == "10080" ]]; then
-			printf '%s（本机 %s）\n' "default" "$lport"
+			printf '%s (local %s)\n' "default" "$lport"
 			continue
 		fi
 		_matched=()
@@ -142,37 +149,43 @@ else
 			done <<<"$REGISTERED_APPS"
 		fi
 		if ((${#_matched[@]})); then
-			printf '%s（EC2 :%s，本机 %s）\n' "$(IFS=','; echo "${_matched[*]}")" "$rport" "$lport"
+			printf '%s (EC2 :%s, local %s)\n' "$(IFS=','; echo "${_matched[*]}")" "$rport" "$lport"
 		else
-			printf '(未匹配已注册名)（EC2 :%s，本机 %s）\n' "$rport" "$lport"
+			printf '(no registered name matched) (EC2 :%s, local %s)\n' "$rport" "$lport"
 		fi
 	done <<<"$_tunnel_ps"
 fi
 
 echo ""
-echo "=== EC2：根站 10080 + Hub 端口段 20000–29999 上的 LISTEN（需隧道连着才有）==="
-if ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=15 "$SSH_TARGET" \
-	"ss -tlnp 2>/dev/null | grep 127.0.0.1 | grep -E ':(10080|2[0-9]{4})\b' || echo '(无匹配监听 — 可能本机隧道全未开)'"; then
-	:
-else
-	echo "(无法 SSH 到服务器)"
+echo "=== EC2 LISTEN on 127.0.0.1:10080 and 20000-29999 (only when a tunnel is up) ==="
+set +e
+ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=15 "$SSH_TARGET" \
+	"ss -tlnp 2>/dev/null | grep 127.0.0.1 | grep -E ':(10080|2[0-9]{4})\b' || echo '(No matching listeners; tunnels may be down.)'"
+_ss_ec=$?
+set -uo pipefail
+if [[ "$_ss_ec" -ne 0 ]]; then
+	echo "(Could not query listeners over SSH; check connectivity and configuration.)"
 fi
 
 echo ""
-echo "=== EC2：Caddy 已注册子域路由（磁盘上的配置；与隧道是否开启无关）==="
+echo "=== EC2 Caddy registered subdomain routes (on disk; independent of tunnel state) ==="
 if _hub_status_caddy_fetch_error; then
 	:
 elif [[ -n "$_ROUTES_DISPLAY" ]]; then
 	printf '%s' "$_ROUTES_DISPLAY"
 else
-	echo "(无路由条目)"
+	echo "(No route entries.)"
 fi
 
 echo ""
-echo "解读："
-echo "  - 「已注册的 tunnel 名」来自 EC2 上路由文件名；显示为小写，实际注册名大小写与磁盘一致（哈希端口按原名计算）。"
-echo "  - 「本机活动 tunnel 名」由当前 ssh -R 的远端端口对照 hub_remote_port 推断；用了 REMOTE_PORT 覆盖时可能显示未匹配。"
-echo "  - 「回环监听」里有端口 = 当前至少有一条 SSH 反向转发连到 EC2 并在该端口监听。"
-echo "  - 「已注册路径」只表示 Caddy 会反代到该端口；若监听里没有对应端口，浏览器打开会失败或超时。"
-echo "  - 行末「# …」为 hub-register.sh --note 写入的 Registration note（片段首行注释）。"
-echo "  - 应用名与端口的对应关系与 hub-tunnel 一致：hub-common.sh 中 hub_remote_port（zlib Adler-32，与旧版 Python 公式相同）。"
+echo "Legend:"
+echo "  - Registered names come from .caddy filenames on EC2; list is lowercased for display; on-disk case affects hub_remote_port."
+echo "  - Inferred tunnel names map -R remote ports to hub_remote_port; REMOTE_PORT overrides may show as unmatched."
+echo "  - A port under LISTEN usually means an SSH reverse forward is bound on EC2."
+echo "  - Registered routes mean Caddy will reverse_proxy to that port; without a listener, browsers may fail or time out."
+echo "  - Trailing \"# ...\" is from hub-register.sh --note (Registration note in the snippet)."
+echo "  - Port mapping uses hub_remote_port in hub-common.sh (zlib Adler-32, same as Python zlib.adler32)."
+echo ""
+echo "hub-status: end of report."
+
+exit 0

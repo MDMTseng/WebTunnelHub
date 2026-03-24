@@ -1,23 +1,21 @@
 #!/usr/bin/env bash
-# Remove a Hub app from EC2 (delete Caddy snippet(s), reload) and stop local ssh -R for that app's port(s).
-# Matching is case-insensitive: COOLAPP, CoolAPP, and coolapp are the same logical app (Linux stores separate files).
-# The foreground ./hub-tunnel.sh process will exit with an error when its ssh child is killed — that is expected.
+# hub-unregister.sh — Remove Hub route(s) on EC2 (Caddy snippet + reload); by default stop local ssh -R for those ports.
+#
+# App name match is case-insensitive; multiple on-disk names differing only by case may all be removed.
+# If ./hub-tunnel.sh is running in the foreground, it may exit with an error after its ssh child is killed; that is expected.
 #
 # Usage: ./hub-unregister.sh [--no-kill] <AppName>
-#   --no-kill   Only remove Caddy file + reload; do not tear down tunnels (you stop tunnel yourself).
+#   --no-kill   Only remove remote snippet and reload; do not tear down tunnels (stop hub-tunnel yourself).
 #
 # Tunnel teardown (unless --no-kill):
-#   1) EC2: sudo kills the TCP listener for each hub port (usually sshd for -R) — server-side drop.
-#   2) Local: kill matching ssh client processes (fallback if step 1 missed).
+#   1) EC2: stop listeners on each Hub port (typically sshd -R).
+#   2) Local: stop matching ssh clients (fallback).
 # Set HUB_KILL_TUNNEL_ON_EC2=0 to skip step 1 only.
 #
-# If you overrode REMOTE_PORT when registering, set the same REMOTE_PORT here so we target that port only.
-# If REMOTE_PORT is unset, we use one port per on-disk route name (each case variant can differ).
-# Env: see `.env` / `.env.example`; REMOTE_PORT optional override
+# If you used REMOTE_PORT when registering, set the same REMOTE_PORT here. Otherwise ports are derived per matched on-disk name.
 if [ -z "${BASH_VERSION:-}" ]; then
 	exec /usr/bin/env bash "$0" "$@"
 fi
-# `sh hub-unregister.sh` often runs bash in POSIX mode — process substitution is disabled; re-exec without -o posix.
 if shopt -qo posix 2>/dev/null; then
 	exec /usr/bin/env bash "$0" "$@"
 fi
@@ -34,18 +32,24 @@ while [[ "${1:-}" == "--no-kill" ]]; do
 done
 
 APP_NAME="${1:-}"
-[[ -n "$APP_NAME" ]] || { echo "Usage: $0 [--no-kill] <AppName>"; exit 1; }
-hub_validate_app_name "$APP_NAME"
+if [[ -z "$APP_NAME" ]]; then
+	echo "hub-unregister: usage: $0 [--no-kill] <AppName>" >&2
+	exit 1
+fi
+shift
+if [[ $# -gt 0 ]]; then
+	echo "hub-unregister: unexpected arguments: $*" >&2
+	echo "hub-unregister: usage: $0 [--no-kill] <AppName>" >&2
+	exit 1
+fi
+hub_validate_app_name "$APP_NAME" || exit 1
 
 APP_NAME_LOWER="$(printf '%s' "$APP_NAME" | tr '[:upper:]' '[:lower:]')"
 
-# shellcheck disable=SC2087
-MATCHES=()
-while IFS= read -r line || [[ -n "$line" ]]; do
-	[[ -z "$line" ]] && continue
-	MATCHES+=("$line")
-done < <(ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=15 "$SSH_TARGET" \
-	"export HUB_DIR=$(printf '%q' "$HUB_DIR"); export APP_LOWER=$(printf '%q' "$APP_NAME_LOWER"); bash -s" <<'REMOTE'
+set +e
+_match_out="$(
+	ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=15 "$SSH_TARGET" \
+		"export HUB_DIR=$(printf '%q' "$HUB_DIR"); export APP_LOWER=$(printf '%q' "$APP_NAME_LOWER"); bash -s" <<'REMOTE'
 shopt -s nullglob
 for f in "$HUB_DIR"/*.caddy; do
 	b=$(basename "$f" .caddy)
@@ -54,7 +58,21 @@ for f in "$HUB_DIR"/*.caddy; do
 	[[ "$bl" == "$APP_LOWER" ]] && printf '%s\n' "$b"
 done
 REMOTE
-)
+)"
+_ssh_list_ec=$?
+set -euo pipefail
+
+if [[ "$_ssh_list_ec" -ne 0 ]]; then
+	echo "hub-unregister: could not connect or list routes (SSH exit ${_ssh_list_ec}). Check network, key, and SSH_TARGET." >&2
+	exit 1
+fi
+
+MATCHES=()
+while IFS= read -r line || [[ -n "$line" ]]; do
+	line="${line%$'\r'}"
+	[[ -z "$line" ]] && continue
+	MATCHES+=("$line")
+done <<<"$_match_out"
 
 if ((${#MATCHES[@]} == 0)); then
 	echo "hub-unregister: no route matched '${APP_NAME}' (case-insensitive) under ${HUB_DIR} on ${SSH_TARGET}." >&2
@@ -71,7 +89,7 @@ if [[ "$NO_KILL" -eq 0 ]]; then
 			done
 		fi
 	else
-		echo "Skipping EC2 tunnel listener kill (HUB_KILL_TUNNEL_ON_EC2=0)." >&2
+		echo "hub-unregister: skipping EC2 listener teardown (HUB_KILL_TUNNEL_ON_EC2=0)." >&2
 	fi
 	if [[ -n "${REMOTE_PORT-}" ]]; then
 		hub_kill_tunnels_for_remote_port "$REMOTE_PORT"
@@ -81,13 +99,13 @@ if [[ "$NO_KILL" -eq 0 ]]; then
 		done
 	fi
 else
-	echo "Skipping tunnel teardown (--no-kill)." >&2
+	echo "hub-unregister: --no-kill set; skipping tunnel teardown in this script." >&2
 fi
 
 printf -v _hub_snips '%s.caddy ' "${MATCHES[@]}"
-echo "Removing on ${SSH_TARGET} (case-insensitive match for '${APP_NAME}'): ${_hub_snips% }"
+echo "hub-unregister: removing on ${SSH_TARGET} (case-insensitive match for '${APP_NAME}'): ${_hub_snips% }"
 
-# shellcheck disable=SC2087
+set +e
 ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=15 "$SSH_TARGET" \
 	"export HUB_DIR=$(printf '%q' "$HUB_DIR"); export APP_LOWER=$(printf '%q' "$APP_NAME_LOWER"); export MAIN_CFG=$(printf '%q' "$MAIN_CFG"); bash -s" <<'REMOTE'
 set -euo pipefail
@@ -101,5 +119,13 @@ for f in "$HUB_DIR"/*.caddy; do
 done
 sudo caddy validate --config "$MAIN_CFG" && sudo systemctl reload caddy
 REMOTE
+_ssh_rm_ec=$?
+set -euo pipefail
 
-echo "OK: removed route(s): ${MATCHES[*]}. If ./hub-tunnel.sh was running for one of these names, it should have exited (broken pipe / ssh died)."
+if [[ "$_ssh_rm_ec" -ne 0 ]]; then
+	echo "hub-unregister: remote delete, caddy validate, or reload failed (SSH exit ${_ssh_rm_ec}). Inspect the server." >&2
+	exit 1
+fi
+
+printf 'hub-unregister: done. Removed route(s): %s.\n' "${MATCHES[*]}"
+printf 'hub-unregister: if ./hub-tunnel.sh was running in the foreground, it may have exited after ssh was stopped; that is normal.\n'
