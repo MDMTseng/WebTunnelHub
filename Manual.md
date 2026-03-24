@@ -306,11 +306,15 @@ python3 -c "import zlib; n=b'coolapp'; print(20000+zlib.adler32(n)%10000)"
 
 專案內典型用法：**一個應用一個埠**，再 **`hub-tunnel.sh --port 該埠 應用名`**。
 
+- **`/`**：輕量首頁（**`hub_wait_local_http`** / 健康檢查用，不跑 SSH）。  
+- **`/status`**：執行同目錄 **`hub-status.sh`**（需 **`bash`**、專案根 **`.env`**），將終端輸出以 **`<pre>`** 顯示；每次重新整理頁面會再跑一次（可設 **`HUB_STATUS_REFRESH_SEC`** 自動刷新，見 **`SETUP.md`**）。
+
 | 環境變數（可選） | 預設（見 **`SETUP.md`**） | 說明 |
 |------------------|---------------------------|------|
 | **`PORT`** | **8080** | 監聽埠。 |
 | **`HOST`** | **127.0.0.1** | 綁定位址。 |
-| **`HELLO_TITLE`** | **Hello, World** | 頁面 **`h1`** 文字（已做 HTML 跳脫）。 |
+| **`HELLO_TITLE`** | **WebTunnelHub** | 首頁與狀態頁標題（已做 HTML 跳脫）。 |
+| **`HUB_STATUS_TIMEOUT`** 等 | 見 **`SETUP.md`** | **`/status`** 與 **`HUB_BASH`**（Windows 建議 Git Bash 環境）。 |
 
 ---
 

@@ -54,7 +54,7 @@ https://coolapp.域名:1080/      → 该应用专用回环端口（由应用名
 
 | 文件                        | 作用                                                                                                                                                                                                                |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `serve.py`                | 在本机提供 Hello World（纯 HTTP）；端口 `**PORT**`（默认 8080），可选 `**HELLO_TITLE**` 区分多实例                                                                                                                                       |
+| `serve.py`                | 本机纯 HTTP：**`/`** 快速就绪页；**`/status`** 执行同目录 **`hub-status.sh`** 并以网页展示（需 **`bash`** 与 **`.env`**）                                                                                                                                       |
 | `hub-tunnel.sh`               | 反向隧道：无参数 → **10080**→本机；`**--port 端口 应用名`** → Hub 该应用对应 EC2 回环端口                                                                                                                                                  |
 | `hub-common.sh`           | 加载项目根目录 **`.env`**（**无内置默认值**，缺变量即报错）；提供 **`hub_remote_port`**、**`hub_ssh_host`**、**`hub_validate_app_name`** / **`hub_validate_register_app_name`**（注册须全小写）、**`hub_sanitize_register_note`**、隧道检测/注销 kill、**`hub_background_log`** 等 |
 | `hub-register.sh`       | 在 EC2 注册 **`应用名.根域:1080`** 子域站点；**应用名须全小写**；**必须**使用 **`--note` / `-n`**，且清理后至少 **5 个英文字母**；**同名已存在则退出码 2**；**`--force`** 可覆盖 |
@@ -76,7 +76,10 @@ https://coolapp.域名:1080/      → 该应用专用回环端口（由应用名
 | ------------- | -------------- | ------------------------ |
 | `PORT`        | `8080`         | 监听端口                     |
 | `HOST`        | `127.0.0.1`    | 绑定地址                     |
-| `HELLO_TITLE` | `Hello, World` | 页面 `<h1>` 文案（已做 HTML 转义） |
+| `HELLO_TITLE` | `WebTunnelHub` | 首页与状态页标题（已做 HTML 转义） |
+| `HUB_STATUS_TIMEOUT` | `120` | **`/status`** 调用 **`hub-status.sh`** 的超时（秒） |
+| `HUB_BASH`    | `bash`         | 用于执行 **`hub-status.sh`**（Windows 无 **`bash`** 时需 Git Bash 或在 PATH 中） |
+| `HUB_STATUS_REFRESH_SEC` | （空） | 若设为秒数，**`/status`** 页面加 **`meta refresh`** 自动刷新 |
 
 
 **远端与 SSH（推荐写入 `.env`，见 `.env.example`）：**
