@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Local HTTP server for hub-tunnel: quick `/` for health checks; `/status` runs hub-status.sh (see SETUP.md)."""
+"""Local HTTP server for hub-tunnel: quick `/` lists local URLs + Hub tunnels from hub-status.sh; `/status` is the full report (see SETUP.md)."""
+from __future__ import annotations
 import html
 import os
 import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import Callable
+from urllib.parse import urlparse
 
 HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8080"))
@@ -14,6 +17,153 @@ HUB_STATUS_SH = os.path.join(SCRIPT_DIR, "hub-status.sh")
 HUB_STATUS_TIMEOUT = int(os.environ.get("HUB_STATUS_TIMEOUT", "120"))
 HUB_BASH = os.environ.get("HUB_BASH", "bash")
 STATUS_REFRESH = os.environ.get("HUB_STATUS_REFRESH_SEC", "").strip()
+
+_HUB_STATUS_ROUTES_MARKER = "=== EC2 Caddy registered subdomain routes"
+
+
+def _parse_hub_status_routes(text: str) -> tuple[list[tuple[str, str]], str | None]:
+    """Parse app name and registration note from hub-status.sh routes section.
+
+    Lines look like: ``hub-serve -> reverse_proxy 127.0.0.1:25234  # note…``
+    """
+    pos = text.find(_HUB_STATUS_ROUTES_MARKER)
+    if pos == -1:
+        return [], "hub-status output missing Caddy routes section."
+
+    rest = text[pos + len(_HUB_STATUS_ROUTES_MARKER) :]
+    nl = rest.find("\n")
+    if nl == -1:
+        return [], "Malformed hub-status output."
+    body_lines: list[str] = []
+    for raw in rest[nl + 1 :].splitlines():
+        line = raw.rstrip("\r")
+        s = line.strip()
+        if not s:
+            break
+        if s.startswith("===") or s.startswith("Legend:"):
+            break
+        body_lines.append(line)
+
+    if not body_lines:
+        if "(Could not connect or remote command failed" in text:
+            return [], "Could not load Hub routes (SSH failed; open /status for full hub-status)."
+        return [], None
+
+    if len(body_lines) == 1 and "(No route entries.)" in body_lines[0]:
+        return [], None
+
+    rows: list[tuple[str, str]] = []
+    sep = " -> "
+    note_sep = "  # "
+    for line in body_lines:
+        if sep not in line:
+            continue
+        name, tail = line.split(sep, 1)
+        name = name.strip()
+        if not name or name.startswith("("):
+            continue
+        tail = tail.strip()
+        note = ""
+        if note_sep in tail:
+            _proxy, _, note = tail.partition(note_sep)
+            note = note.strip()
+        rows.append((name, note))
+    return rows, None
+
+
+def _parse_dotenv(path: str) -> dict:
+    out: dict[str, str] = {}
+    if not os.path.isfile(path):
+        return out
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[7:].strip()
+            if "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key, val = key.strip(), val.strip()
+            if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+                val = val[1:-1]
+            out[key] = val
+    return out
+
+
+def _merged_config_env() -> dict[str, str]:
+    dot = _parse_dotenv(os.path.join(SCRIPT_DIR, ".env"))
+    return {**dot, **dict(os.environ)}
+
+
+def _parse_hub_public_url(url: str) -> tuple[str, str, str] | None:
+    if not url:
+        return None
+    u = urlparse(url.strip())
+    if not u.scheme or not u.hostname:
+        return None
+    scheme = u.scheme.lower()
+    host = u.hostname
+    port = u.port
+    if port is None:
+        port = 443 if scheme == "https" else 80
+    return scheme, host, str(port)
+
+
+def _hub_app_public_url(scheme: str, host: str, port: str, app: str) -> str:
+    return "%s://%s.%s:%s/" % (scheme, app, host, port)
+
+
+def _fetch_registered_tunnels() -> tuple[list[tuple[str, str, str]], str | None]:
+    """Return ( [(app_name, registration_note, public_url), ...], error_message_or_none ).
+
+    Names and notes come from ``hub-status.sh`` (same Caddy route lines as /status).
+    """
+    env = _merged_config_env()
+    pub = (env.get("HUB_PUBLIC_URL") or "").strip()
+    parsed = _parse_hub_public_url(pub)
+    if not parsed:
+        return [], "HUB_PUBLIC_URL is missing or not a valid URL with host (see .env)."
+
+    scheme, hub_host, hub_port = parsed
+
+    if not os.path.isfile(HUB_STATUS_SH):
+        return [], "hub-status.sh not found next to serve.py (%s)." % SCRIPT_DIR
+
+    try:
+        proc = subprocess.run(
+            [HUB_BASH, HUB_STATUS_SH],
+            cwd=SCRIPT_DIR,
+            capture_output=True,
+            text=True,
+            timeout=HUB_STATUS_TIMEOUT,
+            env={**os.environ},
+        )
+    except FileNotFoundError:
+        return [], (
+            "Could not run %r (install Git Bash on Windows or set HUB_BASH to bash)."
+            % HUB_BASH
+        )
+    except subprocess.TimeoutExpired:
+        return [], "hub-status.sh timed out after %s seconds." % HUB_STATUS_TIMEOUT
+
+    text = (proc.stdout or "") + (proc.stderr or "")
+    if proc.returncode != 0:
+        return [], "hub-status.sh exited with code %s. %s" % (
+            proc.returncode,
+            text.strip()[:500],
+        )
+
+    parsed_rows, perr = _parse_hub_status_routes(text)
+    if perr:
+        return [], perr
+
+    out_rows: list[tuple[str, str, str]] = []
+    for name, note in parsed_rows:
+        url = _hub_app_public_url(scheme, hub_host, hub_port, name)
+        out_rows.append((name, note, url))
+    return out_rows, None
 
 
 def _run_hub_status():
@@ -72,20 +222,92 @@ def _page_status() -> bytes:
     return body.encode("utf-8")
 
 
+def _urls_html_list() -> str:
+    lines = []
+    for urlpath, desc, _fn in ROUTES:
+        lines.append(
+            "<li><a href=\"%s\"><code>%s</code></a> — %s</li>"
+            % (html.escape(urlpath), html.escape(urlpath), html.escape(desc))
+        )
+    return "<ul>" + "".join(lines) + "</ul>"
+
+
+def _hub_tunnel_list_html() -> str:
+    """HTML block: registered Hub apps with public URL links and registration notes."""
+    rows, err = _fetch_registered_tunnels()
+    env = _merged_config_env()
+    pub = (env.get("HUB_PUBLIC_URL") or "").strip()
+
+    parts = [
+        '<h2 style="margin-top:1.5rem;font-size:1.15rem;font-weight:600">'
+        "Hub tunnels (public)</h2>"
+        '<p style="color:#666;font-size:0.95rem;margin:0.25rem 0 0.5rem">'
+        "Names and registration notes match the "
+        "<code>EC2 Caddy registered subdomain routes</code> section of "
+        "<code>hub-status.sh</code> (same data as <a href=\"/status\">/status</a>).</p>"
+    ]
+
+    if pub:
+        root = pub.rstrip("/") + "/"
+        parts.append(
+            "<p>Root site (default <code>hub-tunnel.sh</code> without app name): "
+            '<a href="%s" rel="noopener noreferrer"><code>%s</code></a></p>'
+            % (html.escape(root), html.escape(root))
+        )
+
+    if err:
+        parts.append('<p style="color:#666">%s</p>' % html.escape(err))
+        return "".join(parts)
+
+    if not rows:
+        parts.append(
+            "<p style=\"color:#666\">No registered apps on EC2 "
+            "(<code>hub-routes/*.caddy</code>) yet.</p>"
+        )
+        return "".join(parts)
+
+    items = []
+    for name, note, url in rows:
+        esc_u = html.escape(url)
+        esc_n = html.escape(name)
+        item = (
+            "<li><a href=\"%s\" rel=\"noopener noreferrer\"><code>%s</code></a> — "
+            "<strong>%s</strong>" % (esc_u, esc_u, esc_n)
+        )
+        n = note.strip()
+        if n:
+            item += ": %s" % html.escape(n)
+        item += "</li>"
+        items.append(item)
+    parts.append("<ul>" + "".join(items) + "</ul>")
+    return "".join(parts)
+
+
 def _page_home() -> bytes:
     body = (
         "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>"
         + html.escape(TITLE)
         + "</title>"
-        "<style>body{font-family:system-ui,sans-serif;margin:1rem}a{color:#06c}</style>"
+        "<style>body{font-family:system-ui,sans-serif;margin:1rem}"
+        "a{color:#06c}ul{margin:0.5rem 0 0 1.25rem;padding:0}</style>"
         "</head><body><h1>"
         + html.escape(TITLE)
         + "</h1>"
-        "<p>Local server is up. Open <a href=\"/status\"><strong>Hub status</strong></a> "
-        "for <code>hub-status.sh</code> (SSH to EC2; may take a few seconds).</p>"
-        "</body></html>"
+        "<p>Local server is up. This page:</p>"
+        + _urls_html_list()
+        + _hub_tunnel_list_html()
+        + "</body></html>"
     )
     return body.encode("utf-8")
+
+
+# (path, short description, handler). Single source of truth for GET routes.
+ROUTES: list[tuple[str, str, Callable[[], bytes]]] = [
+    ("/", "Home — health check and this list", _page_home),
+    ("/status", "Hub status via hub-status.sh (SSH to EC2; may take a few seconds)", _page_status),
+]
+
+GET_HANDLERS = {path: fn for path, _desc, fn in ROUTES}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -93,13 +315,11 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.path.split("?", 1)[0]
         path = raw if raw == "/" else raw.rstrip("/") or "/"
 
-        if path == "/":
-            body = _page_home()
-        elif path == "/status":
-            body = _page_status()
-        else:
+        handler_fn = GET_HANDLERS.get(path)
+        if handler_fn is None:
             self.send_error(404, "Not Found")
             return
+        body = handler_fn()
 
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -116,7 +336,11 @@ def main() -> None:
         print("serve.py needs Python 3.7+", file=sys.stderr)
         sys.exit(1)
     httpd = HTTPServer((HOST, PORT), Handler)
-    print("Listening on http://%s:%s/ (Hub status: /status)" % (HOST, PORT))
+    base = "http://%s:%s" % (HOST, PORT)
+    print("Listening on %s/" % base)
+    print("Available URLs:")
+    for urlpath, desc, _fn in ROUTES:
+        print("  %s%s — %s" % (base, urlpath, desc))
     httpd.serve_forever()
 
 
