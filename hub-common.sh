@@ -185,6 +185,18 @@ hub_validate_register_app_name() {
 	fi
 }
 
+# hub-register.sh: one-line registration note stored as a Caddy comment (no tabs/newlines).
+hub_sanitize_register_note() {
+	local t="$1"
+	t="${t//$'\r'/ }"
+	t="${t//$'\n'/ }"
+	t="${t//$'\t'/ }"
+	if ((${#t} > 1024)); then
+		t="${t:0:1024}"
+	fi
+	printf '%s' "$t"
+}
+
 # Zlib-compatible Adler-32 over bytes (ASCII app names per hub_validate_app_name).
 hub_zlib_adler32() {
 	local name="$1" s1=1 s2=0 MOD=65521 i c b

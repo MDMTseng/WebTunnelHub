@@ -34,6 +34,17 @@ for f in "${files[@]}"; do
 	b=$(basename "$f" .caddy)
 	[[ "$b" == _keep ]] && continue
 	printf 'N\t%s\n' "$b"
+	reg_note=""
+	while IFS= read -r _line; do
+		if [[ "$_line" =~ ^#\ Registration\ note:\ (.*)$ ]]; then
+			reg_note="${BASH_REMATCH[1]}"
+		elif [[ "$_line" =~ ^# ]]; then
+			continue
+		else
+			break
+		fi
+	done < "$f"
+	[[ -n "$reg_note" ]] && printf 'M\t%s\t%s\n' "${b,,}" "$reg_note"
 	rp=$(grep -E '^\s*reverse_proxy\s+' "$f" | head -1 | sed 's/^[[:space:]]*//')
 	rp="${rp//$'\t'/ }"
 	printf 'R\t%s\t%s\n' "${b,,}" "${rp:-(无 reverse_proxy 行)}"
@@ -46,6 +57,7 @@ set -uo pipefail
 REGISTERED_APPS=""
 _ROUTES_DISPLAY=""
 _hub_no_dir=""
+declare -A _hub_reg_notes=()
 while IFS= read -r line || [[ -n "$line" ]]; do
 	line="${line%$'\r'}"
 	[[ -z "$line" ]] && continue
@@ -58,10 +70,17 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 		N)
 			REGISTERED_APPS+="${rest}"$'\n'
 			;;
+		M)
+			_mbase="${rest%%$'\t'*}"
+			_mnote="${rest#*$'\t'}"
+			_hub_reg_notes["${_mbase}"]="$_mnote"
+			;;
 		R)
 			_base="${rest%%$'\t'*}"
 			_rp="${rest#*$'\t'}"
-			_ROUTES_DISPLAY+="${_base} -> ${_rp}"$'\n'
+			_rsuffix=""
+			[[ -n "${_hub_reg_notes[$_base]-}" ]] && _rsuffix="  # ${_hub_reg_notes[$_base]}"
+			_ROUTES_DISPLAY+="${_base} -> ${_rp}${_rsuffix}"$'\n'
 			;;
 	esac
 done <<<"$_hub_caddy_out"
@@ -155,4 +174,5 @@ echo "  - 「已注册的 tunnel 名」来自 EC2 上路由文件名；显示为
 echo "  - 「本机活动 tunnel 名」由当前 ssh -R 的远端端口对照 hub_remote_port 推断；用了 REMOTE_PORT 覆盖时可能显示未匹配。"
 echo "  - 「回环监听」里有端口 = 当前至少有一条 SSH 反向转发连到 EC2 并在该端口监听。"
 echo "  - 「已注册路径」只表示 Caddy 会反代到该端口；若监听里没有对应端口，浏览器打开会失败或超时。"
+echo "  - 行末「# …」为 hub-register.sh --note 写入的 Registration note（片段首行注释）。"
 echo "  - 应用名与端口的对应关系与 hub-tunnel 一致：hub-common.sh 中 hub_remote_port（zlib Adler-32，与旧版 Python 公式相同）。"

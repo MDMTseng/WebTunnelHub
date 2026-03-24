@@ -4,8 +4,9 @@
 # Does not stop or alter existing SSH tunnels.
 # Exit codes: 0 ok, 1 usage/ssh/caddy error, 2 duplicate route (file already on server).
 #
-# Usage: ./hub-register.sh [--force] <AppName>
-#   --force  Overwrite existing /etc/caddy/hub-routes/<AppName>.caddy (still reloads Caddy only if write succeeds).
+# Usage: ./hub-register.sh [--force] [--note|-n <text>] <AppName>
+#   --force       Overwrite existing /etc/caddy/hub-routes/<AppName>.caddy (still reloads Caddy only if write succeeds).
+#   --note / -n   Optional note (who/where/when); stored in the snippet and shown by hub-status.sh.
 #
 # Remote needs: top-level "import HUB_DIR/*.caddy" + root site (see Caddyfile.ec2.example). Configure SSH/HUB_* in `.env`.
 set -euo pipefail
@@ -15,14 +16,48 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "${SCRIPT_DIR}/hub-common.sh"
 
 FORCE=0
-while [[ "${1:-}" == "--force" ]]; do
-	FORCE=1
-	shift
+REG_NOTE=""
+while (($#)); do
+	case "$1" in
+		--force)
+			FORCE=1
+			shift
+			;;
+		--note|-n)
+			_note_flag="$1"
+			shift
+			if [[ -z "${1:-}" ]]; then
+				echo "hub-register: ${_note_flag} requires text (e.g. $0 ${_note_flag} 'from laptop' myapp)." >&2
+				exit 1
+			fi
+			REG_NOTE="$1"
+			shift
+			;;
+		-*)
+			echo "hub-register: unknown option: $1" >&2
+			echo "Usage: $0 [--force] [--note|-n <text>] <AppName>" >&2
+			exit 1
+			;;
+		*)
+			break
+			;;
+	esac
 done
 
 APP_NAME="${1:-}"
-[[ -n "$APP_NAME" ]] || { echo "Usage: $0 [--force] <AppName>"; exit 1; }
+[[ -n "$APP_NAME" ]] || { echo "Usage: $0 [--force] [--note|-n <text>] <AppName>"; exit 1; }
+shift
+[[ $# -eq 0 ]] || {
+	echo "hub-register: unexpected arguments: $*" >&2
+	echo "Usage: $0 [--force] [--note|-n <text>] <AppName>" >&2
+	exit 1
+}
 hub_validate_register_app_name "$APP_NAME"
+
+[[ -z "$REG_NOTE" && -n "${HUB_REGISTER_NOTE:-}" ]] && REG_NOTE="$HUB_REGISTER_NOTE"
+if [[ -n "$REG_NOTE" ]]; then
+	REG_NOTE="$(hub_sanitize_register_note "$REG_NOTE")"
+fi
 
 REMOTE_PORT="${REMOTE_PORT:-$(hub_remote_port "$APP_NAME")}"
 
@@ -34,7 +69,7 @@ if [[ "$FORCE" -eq 0 ]]; then
 	set -e
 	if [[ "$check_ec" -eq 0 ]]; then
 		echo "hub-register: failed: route '${APP_NAME}' already exists on server (${HUB_DIR}/${APP_NAME}.caddy)." >&2
-		echo "  Not changing Caddy or any SSH connection. Remove the remote file or run: $0 --force ${APP_NAME}" >&2
+		echo "  Not changing Caddy or any SSH connection. Remove the remote file or run: $0 [--note ...] --force ${APP_NAME}" >&2
 		exit 2
 	fi
 	if [[ "$check_ec" -ne 1 ]]; then
@@ -43,14 +78,14 @@ if [[ "$FORCE" -eq 0 ]]; then
 	fi
 fi
 
-SNIPPET=$(
-	cat <<EOF
-# ${APP_NAME} -> 127.0.0.1:${REMOTE_PORT} (run: ./hub-tunnel.sh --port <local> ${APP_NAME})
-${APP_NAME}.${HUB_PUBLIC_HOST}:${HUB_PUBLIC_PORT} {
-	reverse_proxy 127.0.0.1:${REMOTE_PORT}
-}
-EOF
-)
+SNIPPET=""
+if [[ -n "$REG_NOTE" ]]; then
+	SNIPPET="# Registration note: ${REG_NOTE}"$'\n'
+fi
+SNIPPET+="# ${APP_NAME} -> 127.0.0.1:${REMOTE_PORT} (run: ./hub-tunnel.sh --port <local> ${APP_NAME})"$'\n'
+SNIPPET+="${APP_NAME}.${HUB_PUBLIC_HOST}:${HUB_PUBLIC_PORT} {"$'\n'
+SNIPPET+=$'\t'"reverse_proxy 127.0.0.1:${REMOTE_PORT}"$'\n'
+SNIPPET+="}"
 
 echo "Registering $(hub_app_public_url "${APP_NAME}") (Host: ${APP_NAME}.${HUB_PUBLIC_HOST}:${HUB_PUBLIC_PORT}) -> EC2 127.0.0.1:${REMOTE_PORT}"
 echo "--- snippet ---"
@@ -70,4 +105,8 @@ printf '%s\n' "$SNIPPET" | ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes "$S
 ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes "$SSH_TARGET" \
 	"sudo caddy validate --config ${MAIN_CFG} && sudo systemctl reload caddy"
 
-echo "OK: ${HUB_DIR}/${APP_NAME}.caddy installed and Caddy reloaded."
+if [[ -n "$REG_NOTE" ]]; then
+	echo "OK: ${HUB_DIR}/${APP_NAME}.caddy installed and Caddy reloaded (note saved)."
+else
+	echo "OK: ${HUB_DIR}/${APP_NAME}.caddy installed and Caddy reloaded."
+fi
