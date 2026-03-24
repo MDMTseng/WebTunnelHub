@@ -25,7 +25,7 @@ https://coolapp.域名:1080/      → 该应用专用回环端口（由应用名
 - 浏览器只和 **Caddy** 建立 TLS；证书域名一般为 `**db.xception.tech`**（请换成你的域名）。
 - **1080** 由 **Caddy** 监听；**不要**再用 `**ssh -R 0.0.0.0:1080`** 占同一端口。
 - **根站**：`./hub-tunnel.sh`（无应用名）→ EC2 `**127.0.0.1:10080`** → 本机 `**127.0.0.1:8080**`（可改 `PORT`）。
-- **子域应用**：DNS 需 `**应用名.db.xception.tech**`（或 `***.db.xception.tech**` 泛解析）指向 EC2；每个应用先 `**./hub-register.sh [--note '说明'] 应用名**`（**应用名须全小写**；`--note` 可选，写入片段供 **`hub-status.sh`** 查阅）+ `**./hub-tunnel.sh --port 本地端口 应用名**`（长期开着；隧道名须与 **`.caddy`** 文件名一致）。
+- **子域应用**：DNS 需 `**应用名.db.xception.tech**`（或 `***.db.xception.tech**` 泛解析）指向 EC2；每个应用须 `**./hub-register.sh --note '说明' 应用名**`（**应用名须全小写**；**`--note` 必填**，清理后至少 **5 个英文字母**，供审计与 **`hub-status.sh`** 查阅）+ `**./hub-tunnel.sh --port 本地端口 应用名**`（长期开着；隧道名须与 **`.caddy`** 文件名一致）。
 
 ---
 
@@ -57,9 +57,9 @@ https://coolapp.域名:1080/      → 该应用专用回环端口（由应用名
 | `serve.py`                | 在本机提供 Hello World（纯 HTTP）；端口 `**PORT**`（默认 8080），可选 `**HELLO_TITLE**` 区分多实例                                                                                                                                       |
 | `hub-tunnel.sh`               | 反向隧道：无参数 → **10080**→本机；`**--port 端口 应用名`** → Hub 该应用对应 EC2 回环端口                                                                                                                                                  |
 | `hub-common.sh`           | 加载项目根目录 **`.env`**（**无内置默认值**，缺变量即报错）；提供 **`hub_remote_port`**、**`hub_ssh_host`**、**`hub_validate_app_name`** / **`hub_validate_register_app_name`**（注册须全小写）、**`hub_sanitize_register_note`**、隧道检测/注销 kill、**`hub_background_log`** 等 |
-| `hub-register.sh`       | 在 EC2 注册 **`应用名.根域:1080`** 子域站点；**应用名须全小写**；可选 **`--note` / `-n`** 或环境变量 **`HUB_REGISTER_NOTE`** 写入说明；**同名已存在则退出码 2**；**`--force`** 可覆盖 |
+| `hub-register.sh`       | 在 EC2 注册 **`应用名.根域:1080`** 子域站点；**应用名须全小写**；**必须**使用 **`--note` / `-n`**，且清理后至少 **5 个英文字母**；**同名已存在则退出码 2**；**`--force`** 可覆盖 |
 | `hub-unregister.sh`     | 移除 EC2 上该应用路由（**大小写不敏感**匹配片段），并**结束本机**对应 `**ssh -R`**；可选 `**--no-kill**` 只删配置 |
-| `hub-status.sh`           | 一次 SSH 拉取 **`hub-routes/*.caddy`** 后汇总：**已注册名**、本机 **`ssh -R`** 进程、**由远端端口反推的隧道名**、EC2 **LISTEN**、**Caddy 路由**（含 **`# Registration note`** 摘要）；区块标题为简体中文 |
+| `hub-status.sh`           | 一次 SSH 拉取 **`hub-routes/*.caddy`** 后汇总：**已注册名**、本机 **`ssh -R`** 进程、**由远端端口反推的隧道名**、EC2 **LISTEN**、**Caddy 路由**（含 **`# Registration note`** 摘要）；输出为英文 |
 | `hub-applist.sh`          | 仅列出 EC2 上已注册的 **应用名**（`**hub-routes/*.caddy`**，不含 `**_keep**`）：`**./hub-applist.sh**`                                                                                                                             |
 | `Caddyfile.ec2.example`   | EC2 主配置：`import hub-routes` + 根站 **10080**                                                                                                                                                                        |
 | `hub-ssh.sh`        | 交互登录 EC2（读取 **`.env`**）                                                                                                                                                                |
@@ -89,7 +89,6 @@ https://coolapp.域名:1080/      → 该应用专用回环端口（由应用名
 | `HUB_PUBLIC_URL` | （必填） | 脚本提示用公网 HTTPS 前缀（须与实际一致） |
 | `REMOTE_PORT`    | （Hub 按名计算 / 根站 10080）     | 覆盖 EC2 侧回环端口；改后须与 Caddy 片段一致              |
 | `REMOTE_BIND`    | `127.0.0.1`               | 反向绑定地址；直连 HTTP 见第八节                     |
-| `HUB_REGISTER_NOTE` | （可选） | 未写 **`--note`** 时，**`hub-register.sh`** 使用的默认注册说明（见 **`.env.example`**） |
 
 
 给脚本执行权限（只需一次）：
@@ -190,7 +189,7 @@ export SSH_TARGET=ubuntu@你的域名   # 若与默认不同
 
 ### 6.2 再加一个 Hello（Hub 子域示例）
 
-第二个实例用**不同本机端口**（例如 **9080**），并**先注册**再开隧道。**`hub-register.sh` 只接受全小写应用名**；可选 **`--note`** 记录来源，便于 **`hub-status.sh`** 查看。
+第二个实例用**不同本机端口**（例如 **9080**），并**先注册**再开隧道。**`hub-register.sh` 只接受全小写应用名**；**必须**带 **`--note`**，清理后至少 **5 个英文字母**，便于审计与 **`hub-status.sh`** 查看。
 
 ```bash
 # 本机一次性：在 EC2 写入 /etc/caddy/hub-routes/hello2.caddy
@@ -260,7 +259,7 @@ sudo journalctl -u caddy -n 80 --no-pager
 确认本机 `**serve.py`** 与对应 `**./hub-tunnel.sh**` 均在运行；根站查 `**10080**`，Hub 应用查该应用在 `**hub-register.sh**` 里对应的回环端口。
 
 **5. Hub 子域 404 / 证书错误**  
-确认 DNS：`**应用名.根域**` 指向 EC2。先执行 `**./hub-register.sh [--note …] 应用名**`（**应用名须小写**）并成功 `**reload**` Caddy，再 `**./hub-tunnel.sh --port … 应用名**`；主 `**Caddyfile**` 须为「根站点块 + **顶层** `**import /etc/caddy/hub-routes/*.caddy**`」（见 `**Caddyfile.ec2.example**`）。
+确认 DNS：`**应用名.根域**` 指向 EC2。先执行 `**./hub-register.sh --note '…' 应用名**`（**应用名须小写**，**`--note` 必填且至少 5 个英文字母**）并成功 `**reload**` Caddy，再 `**./hub-tunnel.sh --port … 应用名**`；主 `**Caddyfile**` 须为「根站点块 + **顶层** `**import /etc/caddy/hub-routes/*.caddy**`」（见 `**Caddyfile.ec2.example**`）。
 
 **6. 私钥权限**  
 SSH 要求私钥不宜过宽，例如：
@@ -314,15 +313,14 @@ sudo systemctl reload caddy
 
 应用名规则：**`hub-register.sh`** 使用 **`hub_validate_register_app_name`**——在「首字符为字母或数字、总长 ≤48、仅 **`[A-Za-z0-9_-]`**」基础上，**必须全小写**（不得含大写字母）。**`hub-tunnel.sh` / `hub-unregister.sh`** 仍接受大小写混合，但新注册请统一小写，避免同一逻辑名产生两份 **`.caddy`** 与两个端口。
 
-可选 **`--note '说明'`** 或 **`-n`**（或环境变量 **`HUB_REGISTER_NOTE`**）：说明会写入片段顶部 **`# Registration note: …`**，**`hub-status.sh`** 在「Caddy 已注册子域路由」中于行末以 **`# …`** 显示。
+**必须**提供 **`--note '说明'`** 或 **`-n`**：说明会写入片段顶部 **`# Registration note: …`**，**`hub-status.sh`** 在路由摘要行末以 **`# …`** 显示；经清理后须含至少 **5 个英文字母**。
 
 ```bash
-./hub-register.sh --note 'wiki 文档链接 / 发起人 / 机器' coolapp
-# 仅注册、不要说明：./hub-register.sh coolapp
+./hub-register.sh --note 'wiki doc link from ops laptop' coolapp
 ```
 
 若 EC2 上 **已存在** `**/etc/caddy/hub-routes/<应用名>.caddy`**（同名路由），脚本 **立即退出**（退出码 **2**），**不会** 改写 Caddy、**不会** `reload`、**不会** 动本机或远端任何 **SSH** 连线。  
-若要**强制覆盖**已有片段（仍不中断 SSH），使用 `**./hub-register.sh [--note …] --force 应用名**`（**`--force`**、**`--note`** 均写在 **`<应用名>`** 之前）。  
+若要**强制覆盖**已有片段（仍不中断 SSH），使用 `**./hub-register.sh --note '…' --force 应用名**`（**`--force`**、**`--note`** 均写在 **`<应用名>`** 之前）。  
 否则须先在服务器上 **删除** 对应 `**.caddy`** 文件后再注册。  
 **远端需要** 对 `**tee` / `caddy` / `systemctl`** 具备 **免密 sudo**；否则请把脚本打印的片段 **手动** 贴到服务器并重载 Caddy。
 
@@ -469,7 +467,7 @@ cd /path/to/WebTunnelHub
 ```
 
 你每多一个 Hub 应用，就多一对：**一个终端跑本地服务**，**一个终端跑 `./hub-tunnel.sh --port … 应用名`**。  
-`**./hub-register.sh**`（**小写名**；可选 **`--note`**）只在**第一次**接新应用名时要做；日常恢复**不用**再跑。
+`**./hub-register.sh**`（**小写名**；**必填** **`--note`**）只在**第一次**接新应用名时要做；日常恢复**不用**再跑。
 
 ### 11.4 恢复是否成功的快速检查
 
@@ -481,6 +479,47 @@ cd /path/to/WebTunnelHub
 - **本机开机自动恢复**：可用 macOS **LaunchAgent**、Linux **systemd user**、或 `**autossh`** 把上述命令做成登录自启（需自己保管密钥、注意安全）。  
 - **EC2 公网 IP 固定**：在 AWS 使用**弹性 IP（Elastic IP）** 绑到实例，避免重启或重建后改 DNS。
 
+### 11.6 隧道常驻（跨平台）与 SSH 加固说明
+
+**`hub-tunnel.sh` 默认前台 `exec ssh`**；失败时 **`ExitOnForwardFailure=yes`** 会在 **`-R` 绑定失败时立刻退出**（避免“已连接但转发未起来”）。另启用 **`TCPKeepAlive=yes`**（仍保留 **`ServerAliveInterval` / `ServerAliveCountMax`**）。
+
+- **后台 + 日志（Linux / macOS / Windows Git Bash）**  
+  `**./hub-tunnel.sh -b --port 5654 myapp**`  
+  日志默认 **`logs/hub-tunnel-myapp.log`**（目录可用环境变量 **`HUB_TUNNEL_LOG_DIR`** 修改；**`logs/`** 已加入 **`.gitignore`**）。用 **`./hub-status.sh`** 对照本机 **`-R`** 进程。
+
+- **Linux：`systemd --user`**（示例；把路径与用户名改成你的）  
+
+```ini
+# ~/.config/systemd/user/hub-tunnel-myapp.service
+[Unit]
+Description=WebTunnelHub ssh -R for myapp
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/path/to/WebTunnelHub
+ExecStart=%h/path/to/WebTunnelHub/hub-tunnel.sh --port 5654 myapp
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+```
+
+然后：`systemctl --user daemon-reload && systemctl --user enable --now hub-tunnel-myapp.service`
+
+- **macOS：`launchd` LaunchAgent**  
+  用 **`WorkingDirectory`** 指到仓库根，**`ProgramArguments`** 填 **`/bin/bash`**、**`-lc`**、**`./hub-tunnel.sh --port 5654 myapp`**（或写绝对路径）；**`RunAtLoad`** / **`KeepAlive`** 按需设置。
+
+- **autossh（Linux / Homebrew macOS）**  
+  安装 **autossh** 后可用其包装 **`ssh`**，参数需与 **`hub-tunnel.sh`** 内 **`-p -i -o ServerAlive… -o ExitOnForwardFailure=yes -R …`** 对齐。维护成本较高；优先 **`systemd` / LaunchAgent** 或 **`hub-tunnel.sh -b`**。
+
+- **Windows**  
+  - **Git Bash**：优先用 **`-b`**；或用**任务计划程序**在登录时运行 **`"C:\Program Files\Git\bin\bash.exe" -lc "cd /c/path/WebTunnelHub && ./hub-tunnel.sh --port 5654 myapp"`**。  
+  - **WSL**：在 WSL 内用 **Linux systemd user** 或 **`-b`**，与 **在 WSL 里跑的 `serve.py`** 配套；**不要混用** Windows 原生 **`ssh.exe`** 与脚本里依赖 **`ps`** 的 **`hub-status.sh`** 统计，否则本机进程列表对不齐。
+
+可选 **`SSH_OPTS`**（空格分隔的额外 **`ssh`** 参数，写入 **`.env`**）：例如 **`-o ProxyJump=bastion`**。勿在 **`SSH_OPTS`** 里放含空格的未引用片段。
+
 ---
 
 ## 十二、清单小结（从零顺序）
@@ -491,7 +530,7 @@ cd /path/to/WebTunnelHub
 4. EC2 安装 Caddy：主配置采用 `**Caddyfile.ec2.example**`（`**import hub-routes**` + 根站 **10080**），`**caddy validate`** 后 `**reload**`。
 5. 确保 **1080** 由 Caddy 监听，不被 `**ssh -R *:1080`** 占用。
 6. 本机：`**python3 serve.py**` + `**./hub-tunnel.sh**`（根站 **10080**→**8080**）。
-7. 每增加一个 Hub 应用：`**./hub-register.sh [--note …] 应用名**`（**应用名须小写**）一次 → 本机 `**PORT=… python3 serve.py**`（可选 `**HELLO_TITLE**`）→ `**./hub-tunnel.sh --port … 应用名**` 常开。
+7. 每增加一个 Hub 应用：`**./hub-register.sh --note '…' 应用名**`（**应用名须小写**，**`--note` 至少 5 个英文字母**）一次 → 本机 `**PORT=… python3 serve.py**`（可选 `**HELLO_TITLE**`）→ `**./hub-tunnel.sh --port … 应用名**` 常开。
 8. 用 `**curl**` 或浏览器验证 `**https://域名:1080/**` 与 `**https://应用名.域名:1080/**`（见第七节）。
 9. **本机或 EC2 重启后**：按 **第十一节** 恢复，不必重复从零安装。
 

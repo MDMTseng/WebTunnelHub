@@ -13,7 +13,7 @@
 | 階段 | 說明 | 典型命令／狀態 |
 |------|------|----------------|
 | **0. 前置** | 專案根目錄具備 **`.env`**（或等效 **`export`**），內容符合 `hub-common.sh` 必填變數 | `cp .env.example .env` 並編輯 |
-| **1. 註冊（一次性）** | 在 EC2 寫入 **`${HUB_DIR}/<AppName>.caddy`** 並 **`caddy reload`**；**不**建立 SSH；**應用名須全小寫**；可選 **`--note`** 寫入說明供日後查 | `./hub-register.sh [--note '說明'] <AppName>` |
+| **1. 註冊（一次性）** | 在 EC2 寫入 **`${HUB_DIR}/<AppName>.caddy`** 並 **`caddy reload`**；**不**建立 SSH；**應用名須全小寫**；**必須** **`--note` / `-n`**，且經清理後至少含 **5 個英文字母**（A–Z / a–z） | `./hub-register.sh [--force] --note '說明' <AppName>` |
 | **2. 本機服務** | 本機 HTTP 監聽（例如 **`serve.py`**），埠須與隧道一致 | `PORT=5654 python3 serve.py` |
 | **3. 隧道（常駐）** | 本機執行 **`hub-tunnel.sh --port <本機埠> <AppName>`**，讓 EC2 **`127.0.0.1:<遠端埠>`** 連到本機 | 終端保持開啟或改 **`nohup`** 等 |
 | **4. 運行中** | 瀏覽器開 **`https://<AppName>.<根域>:<埠>/`**（由 **`HUB_PUBLIC_URL`** 解析根域與埠）；斷線／休眠會中斷對外服務 | **`./hub-status.sh`**：已註冊名、本機 **`ssh -R`**、由埠反查的隧道名、EC2 監聽、Caddy 路由（含註冊說明） |
@@ -28,7 +28,7 @@ flowchart LR
     E[".env 必填變數"]
   end
   subgraph once [每個新 App 一次]
-    R["hub-register.sh（小寫名；可選 --note）"]
+    R["hub-register.sh（小寫名；必填 --note）"]
   end
   subgraph run [常駐]
     S["本機 HTTP\nserve.py 等"]
@@ -66,18 +66,13 @@ cp .env.example .env
 
 ```bash
 cd /path/to/WebTunnelHub
-# 可選：在片段頂端寫入註解「Registration note」，hub-status 會在路由列末尾顯示為「# …」
-./hub-register.sh --note 'TRS001 筆電，專案 wiki 連結 …' coolapp
-# 等同：在 .env 設 HUB_REGISTER_NOTE='…' 後省略 --note
+# --note 必填；清理後須含至少 5 個英文字母。hub-status 會在路由列末尾顯示 # …
+./hub-register.sh --note 'TRS001 laptop wiki link' coolapp
 ```
 
-僅註冊、不加說明：
+**不可**省略 **`--note`**／**`-n`**；說明經 **`hub_sanitize_register_note`** 後須仍含至少 **5 個英文字母**（純數字或符號會被拒絕）。
 
-```bash
-./hub-register.sh coolapp
-```
-
-- 若顯示**已存在**而結束（exit **2**），代表註冊過了，**不必**再跑；若要覆寫才用 **`./hub-register.sh [--note '…'] --force coolapp`**（**`--force`** 可與 **`--note`** 並用，順序皆在 **`<AppName>`** 之前）。
+- 若顯示**已存在**而結束（exit **2**），代表註冊過了，**不必**再跑；若要覆寫才用 **`./hub-register.sh --note '…' --force coolapp`**（**`--force`** 與 **`--note`** 均須寫在 **`<AppName>`** 之前）。
 
 ---
 
@@ -91,6 +86,8 @@ cd /path/to/WebTunnelHub
 ```
 
 （亦可：`./hub-tunnel.sh coolapp --port 5654`）
+
+**背景執行（`nohup` + 日誌）**：`./hub-tunnel.sh -b --port 5654 coolapp`，日誌預設 **`logs/hub-tunnel-coolapp.log`**（見 **`SETUP.md` 第十一節 · 11.6**）。**Linux / macOS** 亦可改用 **systemd user**、**LaunchAgent** 或 **autossh**。**Windows** 建議 **Git Bash 的 `-b`**、**工作排程器**，或在 **WSL** 內用與 Linux 相同方式；避免 **Windows 原生 ssh** 與 **Git Bash 腳本**混用導致 **`hub-status.sh`** 對不到行程。
 
 ---
 
@@ -119,7 +116,7 @@ https://coolapp.db.xception.tech:1080/
 ./hub-status.sh
 ```
 
-**`hub-status.sh`** 區塊標題為簡體中文（與本手冊用語無關）。一次 SSH 讀回 **`${HUB_DIR}/*.caddy`** 後會顯示：
+**`hub-status.sh`** 區塊標題與說明為英文。一次 SSH 讀回 **`${HUB_DIR}/*.caddy`** 後會顯示：
 
 1. **已註冊的應用名**（來自檔名；畫面上為小寫排序，實際檔名大小寫與 **`hub_remote_port`** 雜湊一致）。
 2. 本機指向 **`SSH_TARGET`** 且含 **`-R`** 的 **`ssh`** 行程。
@@ -184,7 +181,7 @@ python3 -c "import zlib; n=b'coolapp'; print(20000+zlib.adler32(n)%10000)"
 **語法：**
 
 ```text
-./hub-register.sh [--force ...] [--note|-n <text>] <AppName>
+./hub-register.sh [--force] --note|-n <text> <AppName>
 ```
 
 **`<AppName>`** 須為最後一個參數；**`--force`**、**`--note`**／**`-n`** 皆須寫在其**之前**。多餘參數會報錯。
@@ -192,13 +189,12 @@ python3 -c "import zlib; n=b'coolapp'; print(20000+zlib.adler32(n)%10000)"
 | 參數 | 說明 |
 |------|------|
 | **`--force`** | 可出現多次（效果同單次）。若遠端已有 **`${AppName}.caddy`**，預設**失敗退出**；加 **`--force`** 則覆寫該檔並 reload。 |
-| **`--note` / `-n`** | 可選。註冊說明（誰／從哪裡／為何註冊等），寫入片段頂端註解行 **`# Registration note: …`**，**`hub-status.sh`** 在路由摘要行末以 **`# …`** 顯示。內容經 **`hub_sanitize_register_note`**：換行與 Tab 改空白，最長約 **1024** 字元。 |
+| **`--note` / `-n`** | **必填**。註冊說明，寫入片段頂端 **`# Registration note: …`**；**`hub-status.sh`** 在路由摘要行末以 **`# …`** 顯示。經 **`hub_sanitize_register_note`** 後須含至少 **5 個英文字母**（A–Z / a–z）；換行與 Tab 會改空白，最長約 **1024** 字元。 |
 | **`<AppName>`** | 路徑段名稱；**僅小寫**，規則見上節。 |
 
 | 環境變數（可選） | 說明 |
 |------------------|------|
 | **`REMOTE_PORT`** | 覆寫寫入 Caddy 片段的 **`reverse_proxy 127.0.0.1:埠`**；未設則用 **`hub_remote_port(AppName)`**。之後 **`hub-tunnel`**／**`hub-unregister`** 須一致。 |
-| **`HUB_REGISTER_NOTE`** | 若命令列**未**指定 **`--note`**／**`-n`**，則使用此變數作為註冊說明（同樣經 **`hub_sanitize_register_note`**）。見 **`.env.example`**。 |
 
 **結束代碼：** **`0`** 成功；**`1`** 用法錯誤、SSH／Caddy 失敗；**`2`** 遠端路由已存在且未使用 **`--force`**（**不**改 Caddy、**不**動 SSH）。
 
@@ -301,5 +297,5 @@ python3 -c "import zlib; n=b'coolapp'; print(20000+zlib.adler32(n)%10000)"
 
 ## 延伸閱讀
 
-- **`SETUP.md`**（簡體）：從零安裝 EC2 **Caddy**、安全組、**`hub-register` 小寫名與 `--note`**、**`hub-status.sh` 五段輸出**、重開機恢復與清單；路徑範例為 **`WebTunnelHub`**。
+- **`SETUP.md`**（簡體）：從零安裝 EC2 **Caddy**、安全組、**`hub-register` 小寫名與必填 `--note`（至少 5 個英文字母）**、**`hub-status.sh` 五段輸出（英文）**、重開機恢復與清單；路徑範例為 **`WebTunnelHub`**。
 - 與本手冊分工：**`Manual.md`** 偏逐步操作與參數表；**`SETUP.md`** 偏架構圖與首次佈署。
