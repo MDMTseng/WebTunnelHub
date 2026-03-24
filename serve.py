@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local HTTP server for hub-tunnel: quick `/` lists local URLs + Hub tunnels from hub-status.sh; `/status` is the full report (see SETUP.md)."""
+"""Local HTTP server for hub-tunnel: quick `/` lists local URLs + Hub tunnels from hub-status.sh; `/status` is the full report; `/quickuse` shows QuickUse.md via marked.js (see SETUP.md)."""
 from __future__ import annotations
 import html
 import os
@@ -14,6 +14,9 @@ PORT = int(os.environ.get("PORT", "8080"))
 TITLE = os.environ.get("HELLO_TITLE", "WebTunnelHub")
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 HUB_STATUS_SH = os.path.join(SCRIPT_DIR, "hub-status.sh")
+QUICKUSE_MD = os.path.join(SCRIPT_DIR, "QuickUse.md")
+# Browser-side Markdown (no project dep); pinned major version on jsDelivr.
+_MARKED_CDN = "https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"
 HUB_STATUS_TIMEOUT = int(os.environ.get("HUB_STATUS_TIMEOUT", "120"))
 HUB_BASH = os.environ.get("HUB_BASH", "bash")
 STATUS_REFRESH = os.environ.get("HUB_STATUS_REFRESH_SEC", "").strip()
@@ -213,7 +216,8 @@ def _page_status() -> bytes:
         "<h1>"
         + html.escape(TITLE)
         + "</h1>"
-        '<p><a href="/">Home</a> · Hub status (from <code>hub-status.sh</code>)</p>'
+        '<p><a href="/">Home</a> · <a href="/quickuse">Quick use</a> · '
+        "Hub status (from <code>hub-status.sh</code>)</p>"
         + banner
         + "<pre>"
         + esc
@@ -301,10 +305,54 @@ def _page_home() -> bytes:
     return body.encode("utf-8")
 
 
+def _quickuse_md_raw() -> bytes:
+    if not os.path.isfile(QUICKUSE_MD):
+        return (
+            "# QuickUse.md not found\n\n"
+            "Add **QuickUse.md** next to `serve.py` in the repository.\n"
+        ).encode("utf-8")
+    with open(QUICKUSE_MD, encoding="utf-8", errors="replace") as f:
+        return f.read().encode("utf-8")
+
+
+def _page_quickuse() -> bytes:
+    esc_cdn = html.escape(_MARKED_CDN, quote=True)
+    body = (
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>"
+        + html.escape(TITLE)
+        + " — Quick use</title>"
+        "<style>body{font-family:system-ui,sans-serif;margin:1rem;max-width:50rem;line-height:1.5}"
+        "a{color:#06c}code,pre{background:#f4f4f4;padding:0.15em 0.35em;border-radius:3px;font-size:0.95em}"
+        "pre{padding:1rem;overflow:auto}table{border-collapse:collapse;width:100%}"
+        "th,td{border:1px solid #ccc;padding:0.4rem 0.6rem}</style></head><body>"
+        '<p><a href="/">Home</a> · <a href="/status">Status</a></p>'
+        "<h1>Quick use guide</h1>"
+        '<p style="color:#666">From <code>QuickUse.md</code> in this repo (loaded as <a href="/quickuse.md"><code>/quickuse.md</code></a>).</p>'
+        '<div id="qc"><p>Loading…</p></div>'
+        '<script src="'
+        + esc_cdn
+        + '"></script><script>'
+        "fetch('/quickuse.md').then(function(r){"
+        "if(!r.ok)throw new Error('HTTP '+r.status);return r.text();"
+        "}).then(function(t){"
+        "document.getElementById('qc').innerHTML=marked.parse(t);"
+        "}).catch(function(e){"
+        "document.getElementById('qc').innerHTML="
+        "'<p style=\"color:#b00\">Could not load QuickUse.md: '+String(e)+'</p>';"
+        "});</script></body></html>"
+    )
+    return body.encode("utf-8")
+
+
 # (path, short description, handler). Single source of truth for GET routes.
 ROUTES: list[tuple[str, str, Callable[[], bytes]]] = [
     ("/", "Home — health check and this list", _page_home),
     ("/status", "Hub status via hub-status.sh (SSH to EC2; may take a few seconds)", _page_status),
+    (
+        "/quickuse",
+        "Quick use guide (QuickUse.md, rendered in the browser)",
+        _page_quickuse,
+    ),
 ]
 
 GET_HANDLERS = {path: fn for path, _desc, fn in ROUTES}
@@ -314,6 +362,15 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         raw = self.path.split("?", 1)[0]
         path = raw if raw == "/" else raw.rstrip("/") or "/"
+
+        if path == "/quickuse.md":
+            body = _quickuse_md_raw()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/markdown; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
 
         handler_fn = GET_HANDLERS.get(path)
         if handler_fn is None:
