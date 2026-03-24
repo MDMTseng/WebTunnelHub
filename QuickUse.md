@@ -1,9 +1,9 @@
 # WebTunnelHub — Quick use guide
 
 This guide is for **people who run the Hub** day to day: expose a local web app on the internet through the tunnel.  
-First-time server setup, security groups, and Caddy install are in **`SETUP.md`** (简体中文). Extra detail in Traditional Chinese: **`Manual.md`**.
+First-time **EC2 / Caddy / DNS** setup is summarized in **[README.md](README.md)**.
 
-**Use a Hub app URL for every new service** — for example `https://myapp.yourhub.example.com:1080/`. **Do not** rely on the bare root URL `https://yourhub.example.com:1080/` or on running the tunnel script **without** an app name; that path is **legacy only** (see **`SETUP.md`**).
+**Use a Hub app URL for every new service** — for example `https://myapp.yourhub.example.com:1080/`. **Do not** rely on the bare root URL `https://yourhub.example.com:1080/` or on running the tunnel script **without** an app name; that path is **legacy only** (see **[README.md](README.md)**).
 
 ---
 
@@ -106,6 +106,5 @@ Useful options: **`PORT`** and **`HOST`** (where it listens), **`HUB_STATUS_TIME
 
 | File | Contents |
 |------|-----------|
-| **`SETUP.md`** | Install from scratch, EC2, Caddy, firewall, what to do after a reboot |
-| **`Manual.md`** | Traditional Chinese reference |
+| **`README.md`** | Project overview, architecture, first-time EC2/Caddy setup, script index |
 | **`.env.example`** | Names of all settings your **`.env`** must provide |

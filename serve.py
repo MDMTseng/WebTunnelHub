@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local HTTP server for hub-tunnel: quick `/` lists local URLs + Hub tunnels from hub-status.sh; `/status` is the full report; `/quickuse` shows QuickUse.md via marked.js (see SETUP.md)."""
+"""Local HTTP server for hub-tunnel: quick `/` lists local URLs + Hub tunnels from hub-status.sh; `/status` is the full report; `/quickuse` shows QuickUse.md via marked.js (see README.md)."""
 from __future__ import annotations
 import html
 import os
