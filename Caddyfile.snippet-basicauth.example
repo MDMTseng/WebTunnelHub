@@ -1,0 +1,21 @@
+# Optional: protect a Hub app (or any site block) with HTTP basic auth.
+# Do not copy blindly — merge the directives into your real host:port block or hub-routes snippet.
+#
+# 1) Generate a bcrypt hash on any machine with Caddy installed:
+#      caddy hash-password
+# 2) Replace USER and the hash below.
+# 3) Keep TLS termination on Caddy; this only adds an application-level gate.
+#
+# Example site (adjust AppName, domain, port, and reverse_proxy target):
+#
+# myapp.db.xception.tech:1080 {
+#	basicauth /* {
+#		USER_PLACEHOLDER $2a$14$........................................
+#	}
+#	reverse_proxy 127.0.0.1:23456
+# }
+#
+# Narrower path (e.g. only /admin):
+#	basicauth /admin/* {
+#		USER_PLACEHOLDER $2a$14$........................................
+#	}

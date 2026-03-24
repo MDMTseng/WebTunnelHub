@@ -3,6 +3,17 @@
 #
 # Hub apps are registered as separate site blocks: AppName.db.xception.tech:1080
 # (see hub-register.sh). The import must be TOP-LEVEL — not inside the root site block.
+#
+# Optional access logging (uncomment; ensure log dir exists and is writable by caddy user):
+#   sudo mkdir -p /var/log/caddy && sudo chown caddy:caddy /var/log/caddy
+# Rotate with logrotate or rely on Caddy roll_* options below.
+#	log {
+#		output file /var/log/caddy/hub-1080.log {
+#			roll_size 100mb
+#			roll_keep 10
+#			roll_keep_for 720h
+#		}
+#	}
 
 db.xception.tech:1080 {
 	handle {

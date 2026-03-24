@@ -62,7 +62,8 @@ https://coolapp.域名:1080/      → 该应用专用回环端口（由应用名
 | `hub-status.sh`           | 一次 SSH 拉取 **`hub-routes/*.caddy`** 后汇总：**已注册名**、本机 **`ssh -R`** 进程、**由远端端口反推的隧道名**、EC2 **LISTEN**、**Caddy 路由**（含 **`# Registration note`** 摘要）；输出为英文 |
 | `hub-applist.sh`          | 仅列出 EC2 上已注册的 **应用名**（`**hub-routes/*.caddy`**，不含 `**_keep**`）：`**./hub-applist.sh**`                                                                                                                             |
 | `hub-doctor.sh`           | 自检 **`.env`**、**SSH** 可达、可选本地 HTTP；传入应用名时打印公网 URL 与 **EC2 回环端口** 提示：`**./hub-doctor.sh [--port N] <AppName>**`                                                                                                |
-| `Caddyfile.ec2.example`   | EC2 主配置：`import hub-routes` + 根站 **10080**                                                                                                                                                                        |
+| `Caddyfile.ec2.example`   | EC2 主配置：`import hub-routes` + 根站 **10080**；内含可选 **`log`** 注释                                                                                                                                                                        |
+| `Caddyfile.snippet-basicauth.example` | 可选：**`basicauth`** 示例（敏感 dev 站点）；勿直接当主配置使用                                                                                                                                                                        |
 | `hub-ssh.sh`        | 交互登录 EC2（读取 **`.env`**）                                                                                                                                                                |
 | `.env.example`            | 远端 / SSH / 公网 URL 等变量模板；复制为 **`.env`**（**`.gitignore`** 已忽略 **`.env`**）                                                                                                                                       |
 
@@ -520,6 +521,19 @@ WantedBy=default.target
   - **WSL**：在 WSL 内用 **Linux systemd user** 或 **`-b`**，与 **在 WSL 里跑的 `serve.py`** 配套；**不要混用** Windows 原生 **`ssh.exe`** 与脚本里依赖 **`ps`** 的 **`hub-status.sh`** 统计，否则本机进程列表对不齐。
 
 可选 **`SSH_OPTS`**（空格分隔的额外 **`ssh`** 参数，写入 **`.env`**）：例如 **`-o ProxyJump=bastion`**。勿在 **`SSH_OPTS`** 里放含空格的未引用片段。
+
+---
+
+## 安全加固速查（EC2 / SSH / Caddy，可选）
+
+| 项 | 建议 |
+| --- | --- |
+| **安全组** | **22** 尽量只放行你的公网 IP 或跳板；**1080 / 80** 按访问需求开放。 |
+| **sshd** | 禁用密码登录：**`PasswordAuthentication no`**；可配合 **`AllowUsers`** 限制登录用户。 |
+| **密钥** | Hub 专用 **SSH 私钥**与日常管理密钥分开；定期轮换；本机 **`.env`** 使用 **`chmod 600`**。 |
+| **sudo** | 为运行 **`hub-register.sh` / `hub-unregister.sh`** 的用户配置 **窄命令** **`sudoers`**（仅 **`HUB_DIR`**、`**caddy validate**`、`**systemctl reload caddy**`、unregister 用到的 **`fuser`/`lsof`** 等），避免 **`NOPASSWD: ALL`**。详见仓库根目录文档与运维习惯。 |
+| **敏感 dev 应用** | 可在 Caddy 站点上加 **`basicauth`** 或 IP 限制；示例见 **`Caddyfile.snippet-basicauth.example`**。 |
+| **访问日志** | 见 **`Caddyfile.ec2.example`** 内注释的 **`log { output file ... }`**；配合 **`logrotate`** 或 Caddy **`roll_*`**。 |
 
 ---
 
