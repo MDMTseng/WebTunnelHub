@@ -1,5 +1,5 @@
 # hub-common.sh — Shared helpers and environment for Hub scripts.
-# Sourced by hub-tunnel, hub-register, hub-unregister, hub-status, hub-applist, etc.
+# Sourced by hub-tunnel, hub-register, hub-unregister, hub-status, hub-applist, hub-doctor, etc.
 # Loads `.env` from the repo root when present. Required variables have no built-in defaults.
 # HUB_PUBLIC_URL parsing: https with no port defaults to 443; other schemes default to 80.
 
@@ -196,6 +196,16 @@ hub_sanitize_register_note() {
 		t="${t:0:1024}"
 	fi
 	printf '%s' "$t"
+}
+
+# hub-register: after sanitization, require at least 5 ASCII letters (A-Z, a-z); digits/symbols alone are invalid.
+hub_validate_register_note_text() {
+	local t="$1"
+	local letters="${t//[^a-zA-Z]/}"
+	if ((${#letters} < 5)); then
+		echo "hub-common: registration note must include at least 5 letters (A-Z or a-z), not only digits or punctuation." >&2
+		return 1
+	fi
 }
 
 # Zlib-compatible Adler-32 (ASCII app names per hub_validate_app_name).

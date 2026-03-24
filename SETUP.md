@@ -61,6 +61,7 @@ https://coolapp.域名:1080/      → 该应用专用回环端口（由应用名
 | `hub-unregister.sh`     | 移除 EC2 上该应用路由（**大小写不敏感**匹配片段），并**结束本机**对应 `**ssh -R`**；可选 `**--no-kill**` 只删配置 |
 | `hub-status.sh`           | 一次 SSH 拉取 **`hub-routes/*.caddy`** 后汇总：**已注册名**、本机 **`ssh -R`** 进程、**由远端端口反推的隧道名**、EC2 **LISTEN**、**Caddy 路由**（含 **`# Registration note`** 摘要）；输出为英文 |
 | `hub-applist.sh`          | 仅列出 EC2 上已注册的 **应用名**（`**hub-routes/*.caddy`**，不含 `**_keep**`）：`**./hub-applist.sh**`                                                                                                                             |
+| `hub-doctor.sh`           | 自检 **`.env`**、**SSH** 可达、可选本地 HTTP；传入应用名时打印公网 URL 与 **EC2 回环端口** 提示：`**./hub-doctor.sh [--port N] <AppName>**`                                                                                                |
 | `Caddyfile.ec2.example`   | EC2 主配置：`import hub-routes` + 根站 **10080**                                                                                                                                                                        |
 | `hub-ssh.sh`        | 交互登录 EC2（读取 **`.env`**）                                                                                                                                                                |
 | `.env.example`            | 远端 / SSH / 公网 URL 等变量模板；复制为 **`.env`**（**`.gitignore`** 已忽略 **`.env`**）                                                                                                                                       |
@@ -94,7 +95,7 @@ https://coolapp.域名:1080/      → 该应用专用回环端口（由应用名
 给脚本执行权限（只需一次）：
 
 ```bash
-chmod +x serve.py hub-tunnel.sh hub-register.sh hub-unregister.sh hub-status.sh hub-applist.sh hub-ssh.sh
+chmod +x serve.py hub-tunnel.sh hub-register.sh hub-unregister.sh hub-status.sh hub-applist.sh hub-doctor.sh hub-ssh.sh
 ```
 
 ---

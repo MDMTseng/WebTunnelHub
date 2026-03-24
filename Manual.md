@@ -116,6 +116,14 @@ https://coolapp.db.xception.tech:1080/
 ./hub-status.sh
 ```
 
+**快速自檢（設定、SSH、可選本機 HTTP、公網 URL 提示）：**
+
+```bash
+./hub-doctor.sh
+./hub-doctor.sh coolapp
+./hub-doctor.sh --port 5654 coolapp
+```
+
 **`hub-status.sh`** 區塊標題與說明為英文。一次 SSH 讀回 **`${HUB_DIR}/*.caddy`** 後會顯示：
 
 1. **已註冊的應用名**（來自檔名；畫面上為小寫排序，實際檔名大小寫與 **`hub_remote_port`** 雜湊一致）。
