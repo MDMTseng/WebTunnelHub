@@ -78,6 +78,17 @@ cd /path/to/WebTunnelHub
 
 ## 2. 開隧道（要一直開著）
 
+**一鍵（本機 Hello + 隧道）**：在同一終端先起 **`serve.py`** 再起 **`hub-tunnel.sh`**（隧道在前台，**Ctrl+C** 會一併停掉本機服務）：
+
+```bash
+cd /path/to/WebTunnelHub
+./hub-serve-tunnel.sh --port 5654 coolapp
+# 根站（無子域應用名）：
+# ./hub-serve-tunnel.sh
+```
+
+---
+
 另開終端（或背景跑），**應用名須與註冊時相同**（檔名／子域一致；若曾用舊版註冊出現大小寫混用，隧道名須對應磁碟上的 **`.caddy`** 檔名）。
 
 ```bash

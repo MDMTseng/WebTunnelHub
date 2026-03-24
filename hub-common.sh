@@ -1,5 +1,5 @@
 # hub-common.sh — Shared helpers and environment for Hub scripts.
-# Sourced by hub-tunnel, hub-register, hub-unregister, hub-status, hub-applist, hub-doctor, etc.
+# Sourced by hub-tunnel, hub-register, hub-unregister, hub-status, hub-applist, hub-doctor, hub-serve-tunnel, etc.
 # Loads `.env` from the repo root when present. Required variables have no built-in defaults.
 # HUB_PUBLIC_URL parsing: https with no port defaults to 443; other schemes default to 80.
 
