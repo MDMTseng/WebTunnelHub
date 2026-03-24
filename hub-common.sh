@@ -176,6 +176,15 @@ hub_validate_app_name() {
 	fi
 }
 
+# hub-register.sh: same rules as hub_validate_app_name, and name must be all lowercase.
+hub_validate_register_app_name() {
+	hub_validate_app_name "$1" || return 1
+	if [[ "$1" != "${1,,}" ]]; then
+		echo "hub-register: app name must be all lowercase (no uppercase letters); got: $1" >&2
+		return 1
+	fi
+}
+
 # Zlib-compatible Adler-32 over bytes (ASCII app names per hub_validate_app_name).
 hub_zlib_adler32() {
 	local name="$1" s1=1 s2=0 MOD=65521 i c b

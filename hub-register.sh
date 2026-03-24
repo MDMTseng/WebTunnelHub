@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Register a new Hub route on EC2 (Caddy snippet + reload). Fails if the app name is already registered.
+# App name: see hub_validate_register_app_name in hub-common.sh (lowercase-only).
 # Does not stop or alter existing SSH tunnels.
 # Exit codes: 0 ok, 1 usage/ssh/caddy error, 2 duplicate route (file already on server).
 #
@@ -21,7 +22,7 @@ done
 
 APP_NAME="${1:-}"
 [[ -n "$APP_NAME" ]] || { echo "Usage: $0 [--force] <AppName>"; exit 1; }
-hub_validate_app_name "$APP_NAME"
+hub_validate_register_app_name "$APP_NAME"
 
 REMOTE_PORT="${REMOTE_PORT:-$(hub_remote_port "$APP_NAME")}"
 
