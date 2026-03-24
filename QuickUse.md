@@ -22,7 +22,7 @@ Pick a **lowercase** app name. **`--note`** is required and must contain **at le
 
 ## 1b. `hub-managed-tunnel.sh` (register + tunnel)
 
-Use this when your service is **already listening** on a local port and you want **registration and the SSH tunnel in one command** (same pattern as **`example/run_w_tunnel.sh`**, without starting a server for you).
+Use this when your service is **already listening** on a local port and you want **registration and the SSH tunnel in one command** (like **`example/start.sh`**, but without starting a server for you).
 
 ```bash
 ./hub-managed-tunnel.sh --name myapp --note 'Short note describing the app' --port 9080

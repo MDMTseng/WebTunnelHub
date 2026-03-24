@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# hub-tunnel.sh — SSH reverse tunnel from this machine to EC2 (Hub app or legacy root path).
+# hub-tunnel.sh — SSH reverse tunnel from this machine to the hub host (Hub app or legacy root path).
 #
-# No app name: local 127.0.0.1:PORT (default 8080) -> EC2 REMOTE_BIND:10080 (legacy; discouraged for new services).
-# With app name: local port -> EC2 REMOTE_BIND:hub_remote_port(AppName) (run hub-register first).
+# No app name: local 127.0.0.1:PORT (default 8080) -> hub REMOTE_BIND:10080 (legacy; discouraged for new services).
+# With app name: local port -> hub REMOTE_BIND:hub_remote_port(AppName) (run hub-register first).
 #
-# Direct HTTP on EC2 :1080 without Caddy: REMOTE_BIND=0.0.0.0 REMOTE_PORT=1080 ./hub-tunnel.sh
+# Direct HTTP on hub :1080 without Caddy: REMOTE_BIND=0.0.0.0 REMOTE_PORT=1080 ./hub-tunnel.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -16,8 +16,8 @@ REMOTE_BIND="${REMOTE_BIND:-127.0.0.1}"
 usage() {
 	cat <<'EOF'
 Usage:
-  ./hub-tunnel.sh                          Legacy root path: local PORT/8080 -> EC2 127.0.0.1:10080 (discouraged)
-  ./hub-tunnel.sh --port 3422 myapp        Hub app: local 3422 -> EC2 127.0.0.1:<derived>
+  ./hub-tunnel.sh                          Legacy root path: local PORT/8080 -> hub 127.0.0.1:10080 (discouraged)
+  ./hub-tunnel.sh --port 3422 myapp        Hub app: local 3422 -> hub 127.0.0.1:<derived>
   ./hub-tunnel.sh myapp --port 3422        Same (flags and app name order are flexible)
   ./hub-tunnel.sh -b --port 5654 myapp     Background (nohup + log under logs/)
 
@@ -71,11 +71,11 @@ if [[ -n "$APP_NAME" ]]; then
 	hub_validate_app_name "$APP_NAME" || exit 1
 	REMOTE_PORT="${REMOTE_PORT:-$(hub_remote_port "$APP_NAME")}"
 	echo "hub-tunnel: Hub app '${APP_NAME}' public URL $(hub_app_public_url "${APP_NAME}")"
-	echo "hub-tunnel: forward EC2 127.0.0.1:${REMOTE_PORT} -> local 127.0.0.1:${LOCAL_PORT}"
+	echo "hub-tunnel: forward hub 127.0.0.1:${REMOTE_PORT} -> local 127.0.0.1:${LOCAL_PORT}"
 	echo "hub-tunnel: if not registered yet, run ./hub-register.sh with an all-lowercase name matching this tunnel."
 else
 	REMOTE_PORT="${REMOTE_PORT:-10080}"
-	echo "hub-tunnel: legacy root path: local 127.0.0.1:${LOCAL_PORT} -> EC2 ${REMOTE_BIND}:${REMOTE_PORT} (prefer Hub: use an AppName)"
+	echo "hub-tunnel: legacy root path: local 127.0.0.1:${LOCAL_PORT} -> hub ${REMOTE_BIND}:${REMOTE_PORT} (prefer Hub: use an AppName)"
 fi
 
 echo "hub-tunnel: connecting to ${SSH_TARGET} (keep this process running; public access stops if it exits)."

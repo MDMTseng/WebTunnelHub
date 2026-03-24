@@ -113,13 +113,13 @@ hub_ssh_host() {
 	echo "${SSH_TARGET#*@}"
 }
 
-# True if local ps shows ssh with -R forwarding EC2 127.0.0.1:remote -> this host.
+# True if local ps shows ssh with -R forwarding hub 127.0.0.1:remote -> this host.
 hub_reverse_tunnel_active() {
 	local remote="$1"
 	ps aux 2>/dev/null | grep -E '[s]sh(\.exe)? ' | grep -F "$(hub_ssh_host)" | grep -F -- '-R' | grep -q "127.0.0.1:${remote}:127.0.0.1"
 }
 
-# Stop local ssh client(s) for EC2 127.0.0.1:remote -> this machine (hub-unregister).
+# Stop local ssh client(s) for hub 127.0.0.1:remote -> this machine (hub-unregister).
 hub_kill_tunnels_for_remote_port() {
 	local remote="$1"
 	local host pids
@@ -130,19 +130,19 @@ hub_kill_tunnels_for_remote_port() {
 		ps aux 2>/dev/null | grep -E '[s]sh(\.exe)? ' | grep -F "$host" | grep -F -- '-R' | grep -F "127.0.0.1:${remote}:127.0.0.1" | awk '{print $2}' | sort -u
 	)
 	[[ -z "$pids" ]] && return 0
-	echo "hub-common: stopping local SSH tunnel(s) for EC2 127.0.0.1:${remote} -> localhost (PIDs: ${pids})" >&2
+	echo "hub-common: stopping local SSH tunnel(s) for hub 127.0.0.1:${remote} -> localhost (PIDs: ${pids})" >&2
 	for pid in $pids; do
 		kill "$pid" 2>/dev/null || true
 	done
 	sleep 0.7
 }
 
-# On EC2: stop whatever is listening on TCP :remote (typically sshd -R). Requires sudo.
+# On the hub host: stop whatever is listening on TCP :remote (typically sshd -R). Requires sudo.
 # Port must be digits only. SSH errors are ignored so unregister can still remove route files.
 hub_kill_tunnel_listener_on_ec2() {
 	local remote="$1"
 	[[ "$remote" =~ ^[0-9]+$ ]] || return 0
-	echo "hub-common: releasing listener on EC2 port ${remote} (will drop the matching SSH reverse forward)." >&2
+	echo "hub-common: releasing listener on hub port ${remote} (will drop the matching SSH reverse forward)." >&2
 	# shellcheck disable=SC2087
 	ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=15 "$SSH_TARGET" \
 		"export RPORT=$(printf '%s' "$remote"); bash -s" <<'REMOTE' || true
@@ -244,7 +244,7 @@ hub_zlib_adler32() {
 	printf '%u\n' "$(( (s2 * 65536 + s1) & 0xffffffff ))"
 }
 
-# Deterministic EC2 loopback port per app (20000–29999). Override with REMOTE_PORT on collision.
+# Deterministic hub loopback port per app (20000–29999). Override with REMOTE_PORT on collision.
 hub_remote_port() {
 	local sum
 	sum=$(hub_zlib_adler32 "$1")

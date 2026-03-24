@@ -1,6 +1,6 @@
 # WebTunnelHub
 
-Expose **local HTTP services** on the public internet through **SSH reverse tunnels** to an EC2 host, with **Caddy** terminating **HTTPS** (typically on port **1080**) and routing **`https://<app>.<your-domain>:1080/`** to each tunnel.
+Expose **local HTTP services** on the public internet through **SSH reverse tunnels** to a **hub host** (`SSH_TARGET` in `.env`), with **Caddy** terminating **HTTPS** (typically on port **1080**) and routing **`https://<app>.<your-domain>:1080/`** to each tunnel.
 
 **Day-to-day commands** → **[QuickUse.md](QuickUse.md)** (operators).
 
@@ -10,20 +10,20 @@ Expose **local HTTP services** on the public internet through **SSH reverse tunn
 
 **Use a registered Hub app for every new service** (`hub-register.sh` + `hub-tunnel.sh --port … <AppName>` → `https://<AppName>.<host>:1080/`).
 
-**Do not** build new flows on the bare root URL `https://<host>:1080/` or on `./hub-tunnel.sh` **without** an app name (that maps to EC2 `127.0.0.1:10080`). That path exists for **legacy** setups only. Details: [QuickUse.md](QuickUse.md).
+**Do not** build new flows on the bare root URL `https://<host>:1080/` or on `./hub-tunnel.sh` **without** an app name (that maps to hub `127.0.0.1:10080`). That path exists for **legacy** setups only. Details: [QuickUse.md](QuickUse.md).
 
 ---
 
 ## Architecture
 
 ```
-Browser --HTTPS--> EC2:1080 (Caddy: TLS + route by Host)
+Browser --HTTPS--> hub:1080 (Caddy: TLS + route by Host)
                        |
                        +--> 127.0.0.1:<port> --SSH -R--> your laptop :<local port>
 ```
 
-- **1080** is served by **Caddy** on EC2. Do not bind the same port with `ssh -R …:1080` while Caddy uses it.
-- Each **app name** gets a stable EC2 loopback port (see `hub_remote_port` in `hub-common.sh`).
+- **1080** is served by **Caddy** on the hub host. Do not bind the same port with `ssh -R …:1080` while Caddy uses it.
+- Each **app name** gets a stable hub loopback port (see `hub_remote_port` in `hub-common.sh`).
 - **`HUB_PUBLIC_URL`** in `.env` is the HTTPS **base** (scheme + host + port) used for messages and URL building; prefer app subdomains for real traffic.
 
 ---
@@ -32,8 +32,8 @@ Browser --HTTPS--> EC2:1080 (Caddy: TLS + route by Host)
 
 | Item | Notes |
 |------|--------|
-| **EC2 (Ubuntu)** | Public IP; security group: **22** (SSH), **80** (ACME), **1080** (HTTPS) as needed |
-| **DNS** | Apex and `*.<apex>` (or per-app) **A** records → EC2 |
+| **Hub server** (e.g. Ubuntu VM) | Public IP; firewall: **22** (SSH), **80** (ACME), **1080** (HTTPS) as needed |
+| **DNS** | Apex and `*.<apex>` (or per-app) **A** records → hub host |
 | **SSH** | Key-based login; path in `.env` (Windows/Git Bash: `C:/Users/.../key.pem`) |
 | **This repo** on your machine | Python 3 for optional **`example/serve.py`**; **Bash** for `*.sh` (Git Bash / WSL on Windows) |
 
@@ -57,10 +57,10 @@ chmod +x example/serve.py example/start.sh hub-tunnel.sh hub-register.sh hub-unr
 
 ---
 
-## EC2: Caddy (first time)
+## Hub server: Caddy (first time)
 
 1. Install Caddy per [official install docs](https://caddyserver.com/docs/install).
-2. Align **`/etc/caddy/Caddyfile`** with **[Caddyfile.ec2.example](Caddyfile.ec2.example)** (your hostname instead of the sample; **`import /etc/caddy/hub-routes/*.caddy`** must be **top-level**, not inside the `:1080` block).
+2. Align **`/etc/caddy/Caddyfile`** with **[Caddyfile.hub.example](Caddyfile.hub.example)**. Replace the sample apex **`db.example.com`** with the hostname from **`HUB_PUBLIC_URL`** in `.env` (same apex you use for DNS `*` records). **`import /etc/caddy/hub-routes/*.caddy`** must be **top-level**, not inside the `:1080` block.
 3. Ensure **`/etc/caddy/hub-routes/`** exists (scripts create **`_keep.caddy`** if needed).
 4. `sudo caddy validate --config /etc/caddy/Caddyfile` then `sudo systemctl reload caddy`.
 
@@ -97,13 +97,13 @@ Shortcut: **`./hub-serve-tunnel.sh --port 9080 myapp`** (starts **`example/serve
 
 | Script | Role |
 |--------|------|
-| `hub-register.sh` | Writes EC2 Caddy snippet + reload |
+| `hub-register.sh` | Writes hub Caddy snippet + reload |
 | `hub-tunnel.sh` | SSH `-R` (prefer **`--port` + AppName**) |
 | `hub-unregister.sh` | Remove route + stop matching local `ssh -R` |
-| `hub-status.sh` | Registered apps, local tunnels, EC2 listeners, routes |
+| `hub-status.sh` | Registered apps, local tunnels, hub listeners, routes |
 | `hub-applist.sh` | List registered app names |
 | `hub-doctor.sh` | Quick `.env` / SSH checks |
-| `hub-ssh.sh` | Interactive SSH to EC2 |
+| `hub-ssh.sh` | Interactive SSH to hub host |
 | `example/serve.py` | Local **`/`** (links + tunnel list), **`/status`**, **`/readme`**, **`/quickuse`** |
 | `example/start.sh` | **Demo only**: **`hub-register.sh`** → **`example/serve.py`** :**8080** → **`hub-tunnel.sh`** **`hub-serve`**; prints hints if register fails (no auto-unregister) |
 
@@ -124,12 +124,12 @@ Env: **`PORT`**, **`HOST`**, **`HUB_STATUS_TIMEOUT`**, **`HUB_BASH`** (Windows),
 
 ## After reboot
 
-On your **laptop**: start local HTTP **first**, then each **`hub-tunnel.sh`** (or `-b` services). EC2 **Caddy** and **`hub-routes/*.caddy`** usually persist; you **do not** re-run `hub-register.sh` unless you changed names or config.
+On your **laptop**: start local HTTP **first**, then each **`hub-tunnel.sh`** (or `-b` services). Hub **Caddy** and **`hub-routes/*.caddy`** usually persist; you **do not** re-run `hub-register.sh` unless you changed names or config.
 
 ---
 
 ## More in the repo
 
 - **[QuickUse.md](QuickUse.md)** — Operator checklist and common mistakes  
-- **[Caddyfile.ec2.example](Caddyfile.ec2.example)** — EC2 main config + hub import  
+- **[Caddyfile.hub.example](Caddyfile.hub.example)** — Hub main Caddy config + hub import  
 - **[Caddyfile.snippet-basicauth.example](Caddyfile.snippet-basicauth.example)** — Optional basic auth for sensitive dev sites  

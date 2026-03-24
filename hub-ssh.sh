@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# hub-ssh.sh — Interactive SSH session to EC2 (same SSH_TARGET and key as hub-tunnel / hub-register).
+# hub-ssh.sh — Interactive SSH session to the hub host (same SSH_TARGET and key as hub-tunnel / hub-register).
 #
 # Usage: ./hub-ssh.sh
 # Optional REMOTE_CMD: remote command string; default cd ~/webTunnel && exec bash -l

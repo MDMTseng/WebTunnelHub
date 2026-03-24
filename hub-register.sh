@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# hub-register.sh — Register a Hub subdomain route on EC2 (Caddy snippet + reload).
+# hub-register.sh — Register a Hub subdomain route on the hub host (Caddy snippet + reload).
 #
 # Does not start or modify local SSH tunnels.
 # Exit codes: 0 success; 1 usage/validation/SSH/Caddy failure; 2 route file already exists without --force.
@@ -8,7 +8,7 @@
 #   --force     Overwrite existing ${HUB_DIR}/<AppName>.caddy on the server.
 #   --note / -n Required. Stored in the snippet; shown by hub-status.sh. After sanitization, must contain at least 5 ASCII letters.
 #
-# Remote: main Caddyfile must top-level import ${HUB_DIR}/*.caddy; legacy handle->10080 may exist (see Caddyfile.ec2.example).
+# Remote: main Caddyfile must top-level import ${HUB_DIR}/*.caddy; legacy handle->10080 may exist (see Caddyfile.hub.example).
 # App name: hub_validate_register_app_name in hub-common.sh (lowercase only).
 set -euo pipefail
 
@@ -98,11 +98,11 @@ SNIPPET+=$'\t'"reverse_proxy 127.0.0.1:${REMOTE_PORT}"$'\n'
 SNIPPET+="}"
 
 echo "hub-register: registering $(hub_app_public_url "${APP_NAME}")"
-echo "hub-register: site ${APP_NAME}.${HUB_PUBLIC_HOST}:${HUB_PUBLIC_PORT} -> EC2 127.0.0.1:${REMOTE_PORT}"
+echo "hub-register: site ${APP_NAME}.${HUB_PUBLIC_HOST}:${HUB_PUBLIC_PORT} -> hub 127.0.0.1:${REMOTE_PORT}"
 echo "hub-register: --- snippet preview ---"
 echo "$SNIPPET"
 echo "hub-register: --- end preview ---"
-echo "hub-register: ensure ${MAIN_CFG} matches Caddyfile.ec2.example (legacy handle reverse_proxy 127.0.0.1:10080 optional; top-level import ${HUB_DIR}/*.caddy)."
+echo "hub-register: ensure ${MAIN_CFG} matches Caddyfile.hub.example (legacy handle reverse_proxy 127.0.0.1:10080 optional; top-level import ${HUB_DIR}/*.caddy)."
 echo "hub-register: DNS must resolve ${APP_NAME}.${HUB_PUBLIC_HOST} (or *.${HUB_PUBLIC_HOST}) to this server."
 echo ""
 

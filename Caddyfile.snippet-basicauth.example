@@ -8,7 +8,7 @@
 #
 # Example site (adjust AppName, domain, port, and reverse_proxy target):
 #
-# myapp.db.xception.tech:1080 {
+# myapp.db.example.com:1080 {
 #	basicauth /* {
 #		USER_PLACEHOLDER $2a$14$........................................
 #	}

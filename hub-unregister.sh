@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# hub-unregister.sh — Remove Hub route(s) on EC2 (Caddy snippet + reload); by default stop local ssh -R for those ports.
+# hub-unregister.sh — Remove Hub route(s) on the hub host (Caddy snippet + reload); by default stop local ssh -R for those ports.
 #
 # App name match is case-insensitive; multiple on-disk names differing only by case may all be removed.
 # If ./hub-tunnel.sh is running in the foreground, it may exit with an error after its ssh child is killed; that is expected.
@@ -8,9 +8,9 @@
 #   --no-kill   Only remove remote snippet and reload; do not tear down tunnels (stop hub-tunnel yourself).
 #
 # Tunnel teardown (unless --no-kill):
-#   1) EC2: stop listeners on each Hub port (typically sshd -R).
+#   1) Hub host: stop listeners on each Hub port (typically sshd -R).
 #   2) Local: stop matching ssh clients (fallback).
-# Set HUB_KILL_TUNNEL_ON_EC2=0 to skip step 1 only.
+# Set HUB_KILL_TUNNEL_ON_EC2=0 to skip step 1 only (name kept for compatibility; means hub host).
 #
 # If you used REMOTE_PORT when registering, set the same REMOTE_PORT here. Otherwise ports are derived per matched on-disk name.
 if [ -z "${BASH_VERSION:-}" ]; then
@@ -91,7 +91,7 @@ if [[ "$NO_KILL" -eq 0 ]]; then
 			done
 		fi
 	else
-		echo "hub-unregister: skipping EC2 listener teardown (HUB_KILL_TUNNEL_ON_EC2=0)." >&2
+		echo "hub-unregister: skipping hub listener teardown (HUB_KILL_TUNNEL_ON_EC2=0)." >&2
 	fi
 	if [[ -n "${REMOTE_PORT-}" ]]; then
 		hub_kill_tunnels_for_remote_port "$REMOTE_PORT"

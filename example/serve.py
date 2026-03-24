@@ -28,7 +28,7 @@ HUB_STATUS_TIMEOUT = int(os.environ.get("HUB_STATUS_TIMEOUT", "120"))
 HUB_BASH = os.environ.get("HUB_BASH", "bash")
 STATUS_REFRESH = os.environ.get("HUB_STATUS_REFRESH_SEC", "").strip()
 
-_HUB_STATUS_ROUTES_MARKER = "=== EC2 Caddy registered subdomain routes"
+_HUB_STATUS_ROUTES_MARKER = "=== Hub Caddy registered subdomain routes"
 _HUB_APP_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,47}$")
 
 
@@ -287,7 +287,7 @@ def _hub_tunnel_list_html() -> str:
         "Hub tunnels (public)</h2>"
         '<p style="color:#666;font-size:0.95rem;margin:0.25rem 0 0.5rem">'
         "Names and registration notes match the "
-        "<code>EC2 Caddy registered subdomain routes</code> section of "
+        "<code>Hub Caddy registered subdomain routes</code> section of "
         "<code>hub-status.sh</code> (same data as <a href=\"/status\">/status</a>). "
         "Each row has <strong>Close</strong> to run <code>hub-unregister.sh</code> for that app "
         "(with a confirmation prompt).</p>"
@@ -299,7 +299,7 @@ def _hub_tunnel_list_html() -> str:
 
     if not rows:
         parts.append(
-            "<p style=\"color:#666\">No registered apps on EC2 "
+            "<p style=\"color:#666\">No registered apps on the hub host "
             "(<code>hub-routes/*.caddy</code>) yet.</p>"
         )
         return "".join(parts)
@@ -343,7 +343,7 @@ def _hub_tunnel_list_html() -> str:
         'var t=ev.target;if(!t||!t.classList||!t.classList.contains("hub-close-app-btn"))return;'
         'var app=t.getAttribute("data-app");if(!app)return;'
         "if(!window.confirm('Close tunnel for \"'+app+'\"?\\n\\n"
-        "This removes the Hub route on EC2 and stops the SSH tunnel for that app.'))return;"
+        "This removes the Hub route on the server and stops the SSH tunnel for that app.'))return;"
         'var li=t.closest("li"),msg=li&&li.querySelector(".hub-close-app-msg");'
         'if(msg)msg.textContent="Closing…";t.disabled=true;'
         'fetch("/close-tunnel",{method:"POST",headers:{"Content-Type":"application/json"},'
@@ -460,7 +460,7 @@ def _page_quickuse() -> bytes:
 # (path, short description, handler). Single source of truth for GET routes.
 ROUTES: list[tuple[str, str, Callable[[], bytes]]] = [
     ("/", "Home — health check and this list", _page_home),
-    ("/status", "Hub status via hub-status.sh (SSH to EC2; may take a few seconds)", _page_status),
+    ("/status", "Hub status via hub-status.sh (SSH to hub host; may take a few seconds)", _page_status),
     (
         "/readme",
         "README.md (project overview, rendered in the browser)",

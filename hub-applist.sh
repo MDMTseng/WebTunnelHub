@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# hub-applist.sh — List Hub app names registered on EC2 (${HUB_DIR}/*.caddy, excluding _keep).
+# hub-applist.sh — List Hub app names registered on the hub host (${HUB_DIR}/*.caddy, excluding _keep).
 #
 # Usage: ./hub-applist.sh
 # Config: `.env` via hub-common.sh

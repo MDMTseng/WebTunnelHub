@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# hub-doctor.sh — Quick checks: .env loaded, SSH to EC2, optional local HTTP, Hub URL hints.
+# hub-doctor.sh — Quick checks: .env loaded, SSH to hub host, optional local HTTP, Hub URL hints.
 #
 # Usage:
 #   ./hub-doctor.sh
@@ -16,7 +16,7 @@ usage() {
 	cat <<'EOF'
 Usage:
   ./hub-doctor.sh                    Check config + SSH to SSH_TARGET
-  ./hub-doctor.sh <AppName>          Also print public URL and EC2 loopback port
+  ./hub-doctor.sh <AppName>          Also print public URL and hub loopback port
   ./hub-doctor.sh [--port N] <App>   Also probe http://127.0.0.1:N/
 
 Examples:
@@ -84,11 +84,11 @@ _rp="${REMOTE_PORT:-$(hub_remote_port "$APP_NAME")}"
 _pub="$(hub_app_public_url "${APP_NAME}")"
 _pub="${_pub%/}/"
 echo "hub-doctor: app '${APP_NAME}' public URL (after register + tunnel): ${_pub}"
-echo "hub-doctor: EC2 reverse tunnel should bind 127.0.0.1:${_rp} -> your local service port."
+echo "hub-doctor: reverse tunnel on hub should bind 127.0.0.1:${_rp} -> your local service port."
 if hub_reverse_tunnel_active "$_rp"; then
-	echo "hub-doctor: local ssh -R for EC2 :${_rp} appears active."
+	echo "hub-doctor: local ssh -R for hub :${_rp} appears active."
 else
-	echo "hub-doctor: no matching local ssh -R for EC2 :${_rp} (start ./hub-tunnel.sh --port <local> ${APP_NAME})."
+	echo "hub-doctor: no matching local ssh -R for hub :${_rp} (start ./hub-tunnel.sh --port <local> ${APP_NAME})."
 fi
 
 if [[ -n "$LOCAL_PORT" ]]; then

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# hub-status.sh — Summarize Hub state: registered apps, local ssh -R, inferred tunnel names, EC2 listeners, Caddy routes.
+# hub-status.sh — Summarize Hub state: registered apps, local ssh -R, inferred tunnel names, hub listeners, Caddy routes.
 #
-# No arguments. Requires non-interactive SSH to EC2.
+# No arguments. Requires non-interactive SSH to the hub host.
 # One remote read of ${HUB_DIR}/*.caddy; failures are reported in the relevant sections.
 set -uo pipefail
 
@@ -116,7 +116,7 @@ _hub_caddy_state=ok
 ((_caddy_ec != 0)) && _hub_caddy_state=ssh_fail
 [[ "$_hub_caddy_state" == ok && -n "$_hub_no_dir" ]] && _hub_caddy_state=no_files
 
-echo "=== Registered tunnel (app) names (${HUB_DIR}/*.caddy on EC2) ==="
+echo "=== Registered tunnel (app) names (${HUB_DIR}/*.caddy on hub) ==="
 if _hub_status_caddy_fetch_error; then
 	:
 elif [[ -n "$REGISTERED_APPS" ]]; then
@@ -171,15 +171,15 @@ else
 			done <<<"$REGISTERED_APPS"
 		fi
 		if ((${#_matched[@]})); then
-			printf '%s (EC2 :%s, local %s)\n' "$(IFS=','; echo "${_matched[*]}")" "$rport" "$lport"
+			printf '%s (Hub :%s, local %s)\n' "$(IFS=','; echo "${_matched[*]}")" "$rport" "$lport"
 		else
-			printf '(no registered name matched) (EC2 :%s, local %s)\n' "$rport" "$lport"
+			printf '(no registered name matched) (Hub :%s, local %s)\n' "$rport" "$lport"
 		fi
 	done <<<"$_tunnel_ps"
 fi
 
 echo ""
-echo "=== EC2 LISTEN on 127.0.0.1:10080 and 20000-29999 (only when a tunnel is up) ==="
+echo "=== Hub LISTEN on 127.0.0.1:10080 and 20000-29999 (only when a tunnel is up) ==="
 set +e
 ssh -p "$SSH_PORT" -i "$SSH_KEY" -o BatchMode=yes -o ConnectTimeout=15 "$SSH_TARGET" \
 	"ss -tlnp 2>/dev/null | grep 127.0.0.1 | grep -E ':(10080|2[0-9]{4})\b' || echo '(No matching listeners; tunnels may be down.)'"
@@ -190,7 +190,7 @@ if [[ "$_ss_ec" -ne 0 ]]; then
 fi
 
 echo ""
-echo "=== EC2 Caddy registered subdomain routes (on disk; independent of tunnel state) ==="
+echo "=== Hub Caddy registered subdomain routes (on disk; independent of tunnel state) ==="
 if _hub_status_caddy_fetch_error; then
 	:
 elif [[ -n "$_ROUTES_DISPLAY" ]]; then
@@ -201,9 +201,9 @@ fi
 
 echo ""
 echo "Legend:"
-echo "  - Registered names come from .caddy filenames on EC2; list is lowercased for display; on-disk case affects hub_remote_port."
+echo "  - Registered names come from .caddy filenames on the hub host; list is lowercased for display; on-disk case affects hub_remote_port."
 echo "  - Inferred tunnel names map -R remote ports to hub_remote_port; port 10080 is shown as legacy-root (discouraged for new services); REMOTE_PORT overrides may show as unmatched."
-echo "  - A port under LISTEN usually means an SSH reverse forward is bound on EC2."
+echo "  - A port under LISTEN usually means an SSH reverse forward is bound on the hub host."
 echo "  - Registered routes mean Caddy will reverse_proxy to that port; without a listener, browsers may fail or time out."
 echo "  - Trailing \"# ...\" is from hub-register.sh --note (Registration note in the snippet)."
 echo "  - Port mapping uses hub_remote_port in hub-common.sh (zlib Adler-32, same as Python zlib.adler32)."

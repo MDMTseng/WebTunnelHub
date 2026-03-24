@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# hub-managed-tunnel.sh — Register a Hub app, then start the SSH reverse tunnel (local port -> EC2).
+# hub-managed-tunnel.sh — Register a Hub app, then start the SSH reverse tunnel (local port -> hub host).
 # "Managed" = route + remote port are owned by hub-register; tunnel targets that assignment.
 # Run from repo root after the local HTTP server is listening (see example/start.sh).
 set -euo pipefail
@@ -15,7 +15,7 @@ Usage:
   ./hub-managed-tunnel.sh --name <AppName> --note <text> --port <localPort>
 
 Registers the route on the hub (hub-register.sh), then runs hub-tunnel.sh in the
-background and waits (same pattern as example/run_w_tunnel.sh).
+background and waits (like example/start.sh, but it does not start a local server for you).
 
 Environment: same as other hub scripts (.env / SSH_*, HUB_PUBLIC_URL).
 EOF
