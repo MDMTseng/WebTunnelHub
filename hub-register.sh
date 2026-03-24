@@ -83,7 +83,6 @@ if [[ "$FORCE" -eq 0 ]]; then
 	set -e
 	if [[ "$check_ec" -eq 0 ]]; then
 		echo "hub-register: route already exists on server: ${HUB_DIR}/${APP_NAME}.caddy (no changes made)." >&2
-		echo "hub-register: to overwrite, run: $0 --note '<text>' --force ${APP_NAME}" >&2
 		exit 2
 	fi
 	if [[ "$check_ec" -ne 1 ]]; then

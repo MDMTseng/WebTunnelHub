@@ -2,3 +2,4 @@
 .DS_Store
 .skey
 logs/
+__pycache__/

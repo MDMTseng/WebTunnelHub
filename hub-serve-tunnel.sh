@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# hub-serve-tunnel.sh — Minimal local HTTP (serve.py) + SSH reverse tunnel in one command.
+# hub-serve-tunnel.sh — Minimal local HTTP (example/serve.py) + SSH reverse tunnel in one command.
 #
 # Foreground: hub-tunnel (Ctrl+C stops tunnel and cleans up serve.py).
 # Logs: logs/hub-serve-<app|root>.log
 #
 # Usage:
 #   ./hub-serve-tunnel.sh                    Legacy: PORT/8080 -> EC2 10080 without AppName (discouraged; see hub-tunnel.sh)
-#   ./hub-serve-tunnel.sh myapp            serve.py on 8080 + tunnel for Hub app myapp
+#   ./hub-serve-tunnel.sh myapp            example/serve.py on 8080 + tunnel for Hub app myapp
 #   ./hub-serve-tunnel.sh --port 5654 myapp
 set -euo pipefail
 
@@ -17,8 +17,8 @@ source "${SCRIPT_DIR}/hub-common.sh"
 usage() {
 	cat <<'EOF'
 Usage:
-  ./hub-serve-tunnel.sh                     Legacy: serve.py :8080 + tunnel -> EC2 :10080 (no AppName; discouraged)
-  ./hub-serve-tunnel.sh <AppName>         serve.py :8080 + Hub tunnel for <AppName>
+  ./hub-serve-tunnel.sh                     Legacy: example/serve.py :8080 + tunnel -> EC2 :10080 (no AppName; discouraged)
+  ./hub-serve-tunnel.sh <AppName>         example/serve.py :8080 + Hub tunnel for <AppName>
   ./hub-serve-tunnel.sh --port 5654 <App> Custom local port (register the same name first)
 
 Requires: python3 (or python), .env with SSH_* and HUB_PUBLIC_URL (see hub-common.sh).
@@ -88,8 +88,8 @@ trap cleanup EXIT INT TERM
 
 export PORT="$LOCAL_PORT"
 export HELLO_TITLE="${HELLO_TITLE:-WebTunnelHub (${_tag})}"
-echo "hub-serve-tunnel: starting ${_PY} serve.py on 127.0.0.1:${LOCAL_PORT} (log: ${_serve_log})" >&2
-"$_PY" "${SCRIPT_DIR}/serve.py" >>"$_serve_log" 2>&1 &
+echo "hub-serve-tunnel: starting ${_PY} example/serve.py on 127.0.0.1:${LOCAL_PORT} (log: ${_serve_log})" >&2
+"$_PY" "${SCRIPT_DIR}/example/serve.py" >>"$_serve_log" 2>&1 &
 SERVE_PID=$!
 
 if ! hub_wait_local_http "$LOCAL_PORT" 40; then

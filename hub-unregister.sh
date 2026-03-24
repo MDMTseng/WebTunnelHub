@@ -57,6 +57,8 @@ for f in "$HUB_DIR"/*.caddy; do
 	bl=$(printf '%s' "$b" | tr '[:upper:]' '[:lower:]')
 	[[ "$bl" == "$APP_LOWER" ]] && printf '%s\n' "$b"
 done
+# Without this, the last loop iteration can end on a failed [[ ... ]] && printf (status 1) and SSH reports failure.
+exit 0
 REMOTE
 )"
 _ssh_list_ec=$?

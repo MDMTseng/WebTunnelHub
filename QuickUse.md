@@ -1,110 +1,53 @@
-# WebTunnelHub — Quick use guide
+# Quick use
 
-This guide is for **people who run the Hub** day to day: expose a local web app on the internet through the tunnel.  
-First-time **EC2 / Caddy / DNS** setup is summarized in **[README.md](README.md)**.
+**Prereq:** `cp .env.example .env`, fill all values, run scripts from this repo folder. On **Windows**, use **Git Bash** or **WSL** (the `*.sh` helpers need Bash).
 
-**Use a Hub app URL for every new service** — for example `https://myapp.yourhub.example.com:1080/`. **Do not** rely on the bare root URL `https://yourhub.example.com:1080/` or on running the tunnel script **without** an app name; that path is **legacy only** (see **[README.md](README.md)**).
-
----
-
-## What you need on your machine
-
-1. **Configuration file** — Copy **`.env.example`** to **`.env`** and fill in every value you were given (SSH host, key path, public URL, etc.). Without a complete **`.env`**, the scripts will stop with an error.
-2. **Where to run commands** — Open a terminal in the **folder that contains these scripts** (the project root).
-3. **Which terminal to use** — On **Windows**, use **Git Bash** (or WSL) to run the **`.sh`** scripts. On Mac or Linux, use the normal terminal.
-4. **Keep keys private** — Do not share your **`.env`** file or private key.
+**Do not skip step 1.** Every new app name needs **`hub-register.sh` once** before **`hub-tunnel.sh`** (or helpers like **`./example/start.sh`**) will work on the public URL. If you start the tunnel first, Caddy on the hub has no route for that name—register, then tunnel.
 
 ---
 
-## How it fits together (simple)
+## 1. Register
 
-| Part | What it does |
-|------|----------------|
-| **Your program** | Listens on your computer (for example `http://127.0.0.1:8080`). |
-| **Tunnel script** | Keeps an SSH connection open so traffic from the server can reach that port on your PC. **Leave it running** while you want the site live. |
-| **Server (Caddy)** | Handles **HTTPS** at your public address and sends requests to the tunnel. |
-| **Register script** | Tells the server **once** to accept a name like `myapp` at `https://myapp.yourhub…`. It does **not** start the tunnel by itself. |
+Pick a **lowercase** app name. **`--note`** is required and must contain **at least five English letters** after sanitization.
 
-**Reliable order:** register the name on the server (once) → start your app locally → start the tunnel with the **same** app name and **same local port** your app uses.
-
----
-
-## Add a new app (subdomain)
-
-1. **Pick a name** — Use **lowercase only** (for example `myapp`, not `MyApp`).
-
-2. **Register once** — You must include a short **note** (for records). The note must contain **at least five English letters** after cleanup (spaces and punctuation may be removed).
-
-   ```bash
-   ./hub-register.sh --note 'Description of who owns this app' myapp
-   ```
-
-   If this name is already registered, the script will say so. Only use **`--force`** if you really mean to replace the existing setup.
-
-3. **Start your app** on your PC on a fixed port (example: **9080**).
-
-4. **Start the tunnel** — The port here is **your computer’s** port, not the public port.
-
-   ```bash
-   ./hub-tunnel.sh --port 9080 myapp
-   ```
-
-   To run in the background with a log file:
-
-   ```bash
-   ./hub-tunnel.sh -b --port 9080 myapp
-   ```
-
-5. **Check** — Run **`./hub-status.sh`** or, if you use the local helper page, open **`http://127.0.0.1:8080/`** (tunnel links) or **`/status`** (full report).
-
-**Shortcut** — To start a small local test site **and** the tunnel in one go:
+**Order:** register → run your local app → start the tunnel (same app name in both scripts).
 
 ```bash
-./hub-serve-tunnel.sh --port 9080 myapp
+./hub-register.sh --note 'Short note describing the app' myapp
 ```
 
 ---
 
-## Commands you’ll use often
+## 2. Run the tunnel
 
-| What you want | Command |
-|----------------|---------|
-| See tunnels, routes, and listeners | `./hub-status.sh` |
-| List registered app names | `./hub-applist.sh` |
-| Quick check of settings and SSH | `./hub-doctor.sh` or `./hub-doctor.sh --port 9080 myapp` |
-| Open a shell on the server | `./hub-ssh.sh` |
-| Remove an app from the hub and stop its tunnel on this PC | `./hub-unregister.sh myapp` |
-| Local browser pages for status | `python3 serve.py` then open **`http://127.0.0.1:8080/`** |
+Start your service locally (e.g. on port **9080**), then:
 
----
+```bash
+./hub-tunnel.sh --port 9080 myapp
+```
 
-## If something goes wrong
+Your app is reachable at **`https://myapp.<your-hub-host>:1080/`** (see **`HUB_PUBLIC_URL`** in `.env` for the exact base).
 
-| Problem | What to check |
-|---------|----------------|
-| Browser loads forever or errors | Is **your app** running? Is the **tunnel** still running? Start the app first, then the tunnel. |
-| Wrong site or no site | App name in **`hub-tunnel.sh`** must match the name you registered (**lowercase**). Run **`./hub-applist.sh`** to see names on the server. |
-| Subdomain never works | You still need **`hub-register.sh`** once; the tunnel alone does not create the public name. |
-| Register script complains | **`--note`** is required and must meet the **five English letters** rule. |
-| You changed custom ports | The same port choices must be used everywhere you were told to set them (register, tunnel, server). Ask whoever maintains the server if unsure. |
+Keep this terminal open while you need the tunnel. For a **background** tunnel with logs under `logs/`:
+
+```bash
+./hub-tunnel.sh -b --port 9080 myapp
+```
 
 ---
 
-## Local status page (`serve.py`, optional)
+## 3. Unregister when done
 
-If you run **`python3 serve.py`** on your machine:
+Removes the Hub route and stops matching local tunnel processes for that app:
 
-- **`http://127.0.0.1:8080/`** — Short list of local links and your Hub app URLs (needs working **`.env`** and SSH like the status script).
-- **`http://127.0.0.1:8080/quickuse`** — This **Quick use** guide as a readable page (**QuickUse.md**), rendered in the browser (loads **marked.js** from the internet once).
-- **`http://127.0.0.1:8080/status`** — Full text report from **`hub-status.sh`** (can take a little time).
-
-Useful options: **`PORT`** and **`HOST`** (where it listens), **`HUB_STATUS_TIMEOUT`** (how long to wait for the report). On Windows, **`HUB_BASH`** can point to Bash if it is not on your `PATH`.
+```bash
+./hub-unregister.sh myapp
+```
 
 ---
 
-## More documentation
+## Caveats
 
-| File | Contents |
-|------|-----------|
-| **`README.md`** | Project overview, architecture, first-time EC2/Caddy setup, script index |
-| **`.env.example`** | Names of all settings your **`.env`** must provide |
+- Use a **registered** app name for new work. Do **not** rely on **`https://<hub>:1080/`** with **no** app subdomain—that path is **legacy** only.
+- **`hub-register.sh` is easy to forget**—without it, the tunnel may run but the hub will not proxy your app. Re-run registration if you change app names or re-create routes.
+- Registration and tunnel scripts expect a working **SSH** setup to the Hub host (keys, `.env` values). Server-side Caddy setup is documented in **[README.md](README.md)**.

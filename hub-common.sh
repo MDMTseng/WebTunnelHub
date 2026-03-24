@@ -155,7 +155,14 @@ REMOTE
 
 hub_local_http_ok() {
 	local p="$1"
-	curl -sS -o /dev/null -m 2 -w '' "http://127.0.0.1:${p}/" 2>/dev/null
+	if curl -sS -o /dev/null -m 2 -w '' "http://127.0.0.1:${p}/" 2>/dev/null; then
+		return 0
+	fi
+	# Git Bash / MSYS: Windows curl in PATH may fail localhost HTTP even when the server is up.
+	if bash -c 'exec 3<>/dev/tcp/127.0.0.1/$1 && exec 3<&- 3>&-' bash "$p" 2>/dev/null; then
+		return 0
+	fi
+	return 1
 }
 
 hub_wait_local_http() {

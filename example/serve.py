@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local HTTP server for hub-tunnel: quick `/` lists local URLs + Hub tunnels from hub-status.sh; `/status` is the full report; `/quickuse` shows QuickUse.md via marked.js (see README.md)."""
+"""Local HTTP server for hub-tunnel: `/` lists local URLs + Hub tunnels; `/status` runs hub-status.sh; `/readme` and `/quickuse` render Markdown via marked.js (CDN)."""
 from __future__ import annotations
 import html
 import os
@@ -13,8 +13,10 @@ HOST = os.environ.get("HOST", "127.0.0.1")
 PORT = int(os.environ.get("PORT", "8080"))
 TITLE = os.environ.get("HELLO_TITLE", "WebTunnelHub")
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-HUB_STATUS_SH = os.path.join(SCRIPT_DIR, "hub-status.sh")
-QUICKUSE_MD = os.path.join(SCRIPT_DIR, "QuickUse.md")
+REPO_ROOT = os.path.dirname(SCRIPT_DIR)
+HUB_STATUS_SH = os.path.join(REPO_ROOT, "hub-status.sh")
+README_MD = os.path.join(REPO_ROOT, "README.md")
+QUICKUSE_MD = os.path.join(REPO_ROOT, "QuickUse.md")
 # Browser-side Markdown (no project dep); pinned major version on jsDelivr.
 _MARKED_CDN = "https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"
 HUB_STATUS_TIMEOUT = int(os.environ.get("HUB_STATUS_TIMEOUT", "120"))
@@ -96,7 +98,7 @@ def _parse_dotenv(path: str) -> dict:
 
 
 def _merged_config_env() -> dict[str, str]:
-    dot = _parse_dotenv(os.path.join(SCRIPT_DIR, ".env"))
+    dot = _parse_dotenv(os.path.join(REPO_ROOT, ".env"))
     return {**dot, **dict(os.environ)}
 
 
@@ -132,12 +134,12 @@ def _fetch_registered_tunnels() -> tuple[list[tuple[str, str, str]], str | None]
     scheme, hub_host, hub_port = parsed
 
     if not os.path.isfile(HUB_STATUS_SH):
-        return [], "hub-status.sh not found next to serve.py (%s)." % SCRIPT_DIR
+        return [], "hub-status.sh not found in repository root (%s)." % REPO_ROOT
 
     try:
         proc = subprocess.run(
             [HUB_BASH, HUB_STATUS_SH],
-            cwd=SCRIPT_DIR,
+            cwd=REPO_ROOT,
             capture_output=True,
             text=True,
             timeout=HUB_STATUS_TIMEOUT,
@@ -171,11 +173,11 @@ def _fetch_registered_tunnels() -> tuple[list[tuple[str, str, str]], str | None]
 
 def _run_hub_status():
     if not os.path.isfile(HUB_STATUS_SH):
-        return 127, "hub-status.sh not found next to serve.py (%s)" % SCRIPT_DIR
+        return 127, "hub-status.sh not found in repository root (%s)" % REPO_ROOT
     try:
         proc = subprocess.run(
             [HUB_BASH, HUB_STATUS_SH],
-            cwd=SCRIPT_DIR,
+            cwd=REPO_ROOT,
             capture_output=True,
             text=True,
             timeout=HUB_STATUS_TIMEOUT,
@@ -216,7 +218,8 @@ def _page_status() -> bytes:
         "<h1>"
         + html.escape(TITLE)
         + "</h1>"
-        '<p><a href="/">Home</a> · <a href="/quickuse">Quick use</a> · '
+        '<p><a href="/">Home</a> · <a href="/readme">README</a> · '
+        '<a href="/quickuse">Quick use</a> · '
         "Hub status (from <code>hub-status.sh</code>)</p>"
         + banner
         + "<pre>"
@@ -295,14 +298,54 @@ def _page_home() -> bytes:
     return body.encode("utf-8")
 
 
+def _readme_md_raw() -> bytes:
+    if not os.path.isfile(README_MD):
+        return (
+            "# README.md not found\n\n"
+            "Add **README.md** at the repository root.\n"
+        ).encode("utf-8")
+    with open(README_MD, encoding="utf-8", errors="replace") as f:
+        return f.read().encode("utf-8")
+
+
 def _quickuse_md_raw() -> bytes:
     if not os.path.isfile(QUICKUSE_MD):
         return (
             "# QuickUse.md not found\n\n"
-            "Add **QuickUse.md** next to `serve.py` in the repository.\n"
+            "Add **QuickUse.md** at the repository root.\n"
         ).encode("utf-8")
     with open(QUICKUSE_MD, encoding="utf-8", errors="replace") as f:
         return f.read().encode("utf-8")
+
+
+def _page_readme() -> bytes:
+    esc_cdn = html.escape(_MARKED_CDN, quote=True)
+    body = (
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>"
+        + html.escape(TITLE)
+        + " — README</title>"
+        "<style>body{font-family:system-ui,sans-serif;margin:1rem;max-width:50rem;line-height:1.5}"
+        "a{color:#06c}code,pre{background:#f4f4f4;padding:0.15em 0.35em;border-radius:3px;font-size:0.95em}"
+        "pre{padding:1rem;overflow:auto}table{border-collapse:collapse;width:100%}"
+        "th,td{border:1px solid #ccc;padding:0.4rem 0.6rem}</style></head><body>"
+        '<p><a href="/">Home</a> · <a href="/quickuse">Quick use</a> · '
+        '<a href="/status">Status</a></p>'
+        "<h1>README</h1>"
+        '<p style="color:#666">From <code>README.md</code> (loaded as <a href="/readme.md"><code>/readme.md</code></a>).</p>'
+        '<div id="rc"><p>Loading…</p></div>'
+        '<script src="'
+        + esc_cdn
+        + '"></script><script>'
+        "fetch('/readme.md').then(function(r){"
+        "if(!r.ok)throw new Error('HTTP '+r.status);return r.text();"
+        "}).then(function(t){"
+        "document.getElementById('rc').innerHTML=marked.parse(t);"
+        "}).catch(function(e){"
+        "document.getElementById('rc').innerHTML="
+        "'<p style=\"color:#b00\">Could not load README.md: '+String(e)+'</p>';"
+        "});</script></body></html>"
+    )
+    return body.encode("utf-8")
 
 
 def _page_quickuse() -> bytes:
@@ -315,7 +358,8 @@ def _page_quickuse() -> bytes:
         "a{color:#06c}code,pre{background:#f4f4f4;padding:0.15em 0.35em;border-radius:3px;font-size:0.95em}"
         "pre{padding:1rem;overflow:auto}table{border-collapse:collapse;width:100%}"
         "th,td{border:1px solid #ccc;padding:0.4rem 0.6rem}</style></head><body>"
-        '<p><a href="/">Home</a> · <a href="/status">Status</a></p>'
+        '<p><a href="/">Home</a> · <a href="/readme">README</a> · '
+        '<a href="/status">Status</a></p>'
         "<h1>Quick use guide</h1>"
         '<p style="color:#666">From <code>QuickUse.md</code> in this repo (loaded as <a href="/quickuse.md"><code>/quickuse.md</code></a>).</p>'
         '<div id="qc"><p>Loading…</p></div>'
@@ -339,6 +383,11 @@ ROUTES: list[tuple[str, str, Callable[[], bytes]]] = [
     ("/", "Home — health check and this list", _page_home),
     ("/status", "Hub status via hub-status.sh (SSH to EC2; may take a few seconds)", _page_status),
     (
+        "/readme",
+        "README.md (project overview, rendered in the browser)",
+        _page_readme,
+    ),
+    (
         "/quickuse",
         "Quick use guide (QuickUse.md, rendered in the browser)",
         _page_quickuse,
@@ -348,10 +397,27 @@ ROUTES: list[tuple[str, str, Callable[[], bytes]]] = [
 GET_HANDLERS = {path: fn for path, _desc, fn in ROUTES}
 
 
+def _wfile_write_ignore_disconnect(wfile, data: bytes) -> None:
+    """Client may close early (tunnel/browser); Windows raises ConnectionAbortedError (WinError 10053)."""
+    try:
+        wfile.write(data)
+    except ConnectionError:
+        pass
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         raw = self.path.split("?", 1)[0]
         path = raw if raw == "/" else raw.rstrip("/") or "/"
+
+        if path == "/readme.md":
+            body = _readme_md_raw()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/markdown; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            _wfile_write_ignore_disconnect(self.wfile, body)
+            return
 
         if path == "/quickuse.md":
             body = _quickuse_md_raw()
@@ -359,7 +425,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/markdown; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            _wfile_write_ignore_disconnect(self.wfile, body)
             return
 
         handler_fn = GET_HANDLERS.get(path)
@@ -372,7 +438,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        _wfile_write_ignore_disconnect(self.wfile, body)
 
     def log_message(self, fmt: str, *args) -> None:
         print("%s - - [%s] %s" % (self.client_address[0], self.log_date_time_string(), fmt % args))
