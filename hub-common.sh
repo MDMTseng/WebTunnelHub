@@ -35,6 +35,11 @@ hub_msys_prepend_path() {
 }
 hub_msys_prepend_path
 
+# Lowercase ASCII without ${var,,} (requires bash 4+; macOS /bin/sh is bash 3.2).
+hub_ascii_lower() {
+	printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
+}
+
 # Parse scheme, host, and port from HUB_PUBLIC_URL (no Python).
 hub_parse_public_url() {
 	local url="$HUB_PUBLIC_URL" scheme rest authority auth
@@ -81,7 +86,7 @@ hub_parse_public_url() {
 		return 1
 	fi
 
-	scheme_lc="${scheme,,}"
+	scheme_lc="$(hub_ascii_lower "$scheme")"
 	if [[ -z "$port" ]]; then
 		if [[ "$scheme_lc" == "https" ]]; then
 			port=443
@@ -199,7 +204,7 @@ hub_validate_app_name() {
 # hub-register: same as hub_validate_app_name, and name must be all lowercase ASCII letters (no uppercase).
 hub_validate_register_app_name() {
 	hub_validate_app_name "$1" || return 1
-	if [[ "$1" != "${1,,}" ]]; then
+	if [[ "$1" != "$(hub_ascii_lower "$1")" ]]; then
 		echo "hub-common: registration requires an all-lowercase app name; got '$1'." >&2
 		return 1
 	fi

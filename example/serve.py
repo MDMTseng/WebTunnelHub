@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Local HTTP server for hub-tunnel: `/` lists local URLs + Hub tunnels; `/status` runs hub-status.sh; `/readme` and `/quickuse` render Markdown via marked.js (CDN)."""
+"""Local HTTP server for hub-tunnel: `/` lists local URLs + Hub tunnels (per-app Close → hub-unregister); `/status` runs hub-status.sh; `/readme` and `/quickuse` render Markdown via marked.js (CDN)."""
 from __future__ import annotations
 import html
+import json
 import os
+import re
 import subprocess
 import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -15,6 +17,9 @@ TITLE = os.environ.get("HELLO_TITLE", "WebTunnelHub")
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 HUB_STATUS_SH = os.path.join(REPO_ROOT, "hub-status.sh")
+HUB_UNREGISTER_SH = os.path.join(REPO_ROOT, "hub-unregister.sh")
+# Default app when POST /close-tunnel has no JSON body (e.g. example/start.sh uses hub-serve).
+HUB_CLOSE_APP = (os.environ.get("HUB_CLOSE_APP") or "hub-serve").strip() or "hub-serve"
 README_MD = os.path.join(REPO_ROOT, "README.md")
 QUICKUSE_MD = os.path.join(REPO_ROOT, "QuickUse.md")
 # Browser-side Markdown (no project dep); pinned major version on jsDelivr.
@@ -24,6 +29,12 @@ HUB_BASH = os.environ.get("HUB_BASH", "bash")
 STATUS_REFRESH = os.environ.get("HUB_STATUS_REFRESH_SEC", "").strip()
 
 _HUB_STATUS_ROUTES_MARKER = "=== EC2 Caddy registered subdomain routes"
+_HUB_APP_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,47}$")
+
+
+def _valid_hub_app_name(name: str) -> bool:
+    """Same rule as hub_validate_app_name in hub-common.sh."""
+    return bool(name and _HUB_APP_NAME_RE.fullmatch(name))
 
 
 def _parse_hub_status_routes(text: str) -> tuple[list[tuple[str, str]], str | None]:
@@ -171,6 +182,34 @@ def _fetch_registered_tunnels() -> tuple[list[tuple[str, str, str]], str | None]
     return out_rows, None
 
 
+def _run_close_tunnel(app: str) -> tuple[bool, str]:
+    """Run hub-unregister.sh for ``app``; tears down SSH tunnel when demo used hub-tunnel.sh."""
+    if not _valid_hub_app_name(app):
+        return False, "Invalid app name (use letters, digits, _-; max 48 chars)."
+    if not os.path.isfile(HUB_UNREGISTER_SH):
+        return False, "hub-unregister.sh not found in repository root (%s)." % REPO_ROOT
+    try:
+        proc = subprocess.run(
+            [HUB_BASH, HUB_UNREGISTER_SH, app],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=HUB_STATUS_TIMEOUT,
+            env={**os.environ},
+        )
+    except FileNotFoundError:
+        return False, (
+            "Could not run %r (install Git Bash on Windows or set HUB_BASH to bash)." % HUB_BASH
+        )
+    except subprocess.TimeoutExpired:
+        return False, "hub-unregister.sh timed out after %s seconds." % HUB_STATUS_TIMEOUT
+    text = ((proc.stdout or "") + (proc.stderr or "")).strip()
+    if proc.returncode != 0:
+        err = text[:4000] if text else "hub-unregister.sh exited with code %s." % proc.returncode
+        return False, err
+    return True, text[:4000] if text else "Tunnel closed."
+
+
 def _run_hub_status():
     if not os.path.isfile(HUB_STATUS_SH):
         return 127, "hub-status.sh not found in repository root (%s)" % REPO_ROOT
@@ -249,7 +288,9 @@ def _hub_tunnel_list_html() -> str:
         '<p style="color:#666;font-size:0.95rem;margin:0.25rem 0 0.5rem">'
         "Names and registration notes match the "
         "<code>EC2 Caddy registered subdomain routes</code> section of "
-        "<code>hub-status.sh</code> (same data as <a href=\"/status\">/status</a>).</p>"
+        "<code>hub-status.sh</code> (same data as <a href=\"/status\">/status</a>). "
+        "Each row has <strong>Close</strong> to run <code>hub-unregister.sh</code> for that app "
+        "(with a confirmation prompt).</p>"
     ]
 
     if err:
@@ -263,20 +304,58 @@ def _hub_tunnel_list_html() -> str:
         )
         return "".join(parts)
 
+    btn_style = (
+        "background:#c62828;color:#fff;border:none;padding:0.2rem 0.55rem;"
+        "border-radius:5px;font-size:0.8rem;font-weight:600;cursor:pointer;"
+        "vertical-align:middle;flex-shrink:0"
+    )
     items = []
     for name, note, url in rows:
         esc_u = html.escape(url)
         esc_n = html.escape(name)
+        esc_attr = html.escape(name, quote=True)
         item = (
-            "<li><a href=\"%s\" rel=\"noopener noreferrer\"><code>%s</code></a> — "
+            '<li style="display:flex;flex-wrap:wrap;align-items:baseline;gap:0.4rem 0.75rem;'
+            'margin:0.35rem 0">'
+            "<span>"
+            "<a href=\"%s\" rel=\"noopener noreferrer\"><code>%s</code></a> — "
             "<strong>%s</strong>" % (esc_u, esc_u, esc_n)
         )
         n = note.strip()
         if n:
             item += ": %s" % html.escape(n)
-        item += "</li>"
+        item += (
+            "</span>"
+            '<button type="button" class="hub-close-app-btn" data-app="%s" style="%s">'
+            "Close</button>"
+            '<span class="hub-close-app-msg" aria-live="polite" style="font-size:0.85rem;color:#666"></span>'
+            "</li>"
+            % (esc_attr, btn_style)
+        )
         items.append(item)
-    parts.append("<ul>" + "".join(items) + "</ul>")
+    parts.append(
+        '<ul id="hub-tunnels-list" style="margin:0.5rem 0 0 1.25rem;padding:0">'
+        + "".join(items)
+        + "</ul>"
+    )
+    parts.append(
+        '<script>(function(){document.body.addEventListener("click",function(ev){'
+        'var t=ev.target;if(!t||!t.classList||!t.classList.contains("hub-close-app-btn"))return;'
+        'var app=t.getAttribute("data-app");if(!app)return;'
+        "if(!window.confirm('Close tunnel for \"'+app+'\"?\\n\\n"
+        "This removes the Hub route on EC2 and stops the SSH tunnel for that app.'))return;"
+        'var li=t.closest("li"),msg=li&&li.querySelector(".hub-close-app-msg");'
+        'if(msg)msg.textContent="Closing…";t.disabled=true;'
+        'fetch("/close-tunnel",{method:"POST",headers:{"Content-Type":"application/json"},'
+        'body:JSON.stringify({app:app})}).then(function(r){'
+        'return r.json().then(function(j){return{r:r,j:j};});}).then(function(x){'
+        "if(x.j&&x.j.ok){if(msg){msg.textContent=x.j.message||\"Done.\";msg.style.color=\"#2e7d32\";}"
+        "setTimeout(function(){if(li&&li.parentNode)li.parentNode.removeChild(li);},800);"
+        "}else{var err=(x.j&&x.j.error)||x.r.statusText||\"Error\";"
+        'if(msg)msg.textContent="";alert(err);t.disabled=false;}'
+        '}).catch(function(e){if(msg)msg.textContent="";alert(String(e));t.disabled=false;});'
+        "});})();</script>"
+    )
     return "".join(parts)
 
 
@@ -405,7 +484,50 @@ def _wfile_write_ignore_disconnect(wfile, data: bytes) -> None:
         pass
 
 
+def _read_post_json(handler: BaseHTTPRequestHandler) -> dict:
+    try:
+        n = int(handler.headers.get("Content-Length", "0") or 0)
+    except ValueError:
+        n = 0
+    if n <= 0:
+        return {}
+    raw = handler.rfile.read(n)
+    try:
+        obj = json.loads(raw.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return {}
+    return obj if isinstance(obj, dict) else {}
+
+
+def _app_from_close_request(data: dict) -> str:
+    raw = data.get("app")
+    if raw is None:
+        return HUB_CLOSE_APP
+    s = str(raw).strip()
+    return s if s else HUB_CLOSE_APP
+
+
 class Handler(BaseHTTPRequestHandler):
+    def do_POST(self) -> None:
+        raw = self.path.split("?", 1)[0]
+        path = raw if raw == "/" else raw.rstrip("/") or "/"
+        if path != "/close-tunnel":
+            self.send_error(404, "Not Found")
+            return
+        app = _app_from_close_request(_read_post_json(self))
+        ok, msg = _run_close_tunnel(app)
+        payload: dict[str, object] = {"ok": ok, "app": app}
+        if ok:
+            payload["message"] = msg
+        else:
+            payload["error"] = msg
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(200 if ok else 500)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        _wfile_write_ignore_disconnect(self.wfile, body)
+
     def do_GET(self) -> None:
         raw = self.path.split("?", 1)[0]
         path = raw if raw == "/" else raw.rstrip("/") or "/"

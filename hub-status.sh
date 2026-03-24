@@ -11,6 +11,24 @@ source "${SCRIPT_DIR}/hub-common.sh"
 
 HOST_ONLY="$(hub_ssh_host)"
 
+# Bash 3.2 / macOS sh: no associative arrays — use parallel arrays (last key wins, same as repeated map assigns).
+_hub_reg_note_keys=()
+_hub_reg_note_vals=()
+_hub_reg_notes_append() {
+	_hub_reg_note_keys+=("$1")
+	_hub_reg_note_vals+=("$2")
+}
+_hub_reg_notes_lookup() {
+	local _i
+	for ((_i = ${#_hub_reg_note_keys[@]} - 1; _i >= 0; _i--)); do
+		if [[ "${_hub_reg_note_keys[$_i]}" == "$1" ]]; then
+			printf '%s' "${_hub_reg_note_vals[$_i]}"
+			return 0
+		fi
+	done
+	return 1
+}
+
 # Print fetch error for the Caddy snapshot. Returns 0 if a message was printed, 1 if data is usable.
 _hub_status_caddy_fetch_error() {
 	case "${_hub_caddy_state:-}" in
@@ -52,11 +70,11 @@ for f in "${files[@]}"; do
 		fi
 	done < "$f"
 	if [[ -n "$reg_note" ]]; then
-		printf 'M\t%s\t%s\n' "${b,,}" "$reg_note"
+		printf 'M\t%s\t%s\n' "$(printf '%s' "$b" | tr '[:upper:]' '[:lower:]')" "$reg_note"
 	fi
 	rp=$(grep -E '^\s*reverse_proxy\s+' "$f" | head -1 | sed 's/^[[:space:]]*//')
 	rp="${rp//$'\t'/ }"
-	printf 'R\t%s\t%s\n' "${b,,}" "${rp:-(no reverse_proxy line found)}"
+	printf 'R\t%s\t%s\n' "$(printf '%s' "$b" | tr '[:upper:]' '[:lower:]')" "${rp:-(no reverse_proxy line found)}"
 done
 REMOTE
 )"
@@ -66,7 +84,6 @@ set -uo pipefail
 REGISTERED_APPS=""
 _ROUTES_DISPLAY=""
 _hub_no_dir=""
-declare -A _hub_reg_notes=()
 while IFS= read -r line || [[ -n "$line" ]]; do
 	line="${line%$'\r'}"
 	[[ -z "$line" ]] && continue
@@ -82,13 +99,14 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 		M)
 			_mbase="${rest%%$'\t'*}"
 			_mnote="${rest#*$'\t'}"
-			_hub_reg_notes["${_mbase}"]="$_mnote"
+			_hub_reg_notes_append "$_mbase" "$_mnote"
 			;;
 		R)
 			_base="${rest%%$'\t'*}"
 			_rp="${rest#*$'\t'}"
 			_rsuffix=""
-			[[ -n "${_hub_reg_notes[$_base]-}" ]] && _rsuffix="  # ${_hub_reg_notes[$_base]}"
+			_note="$(_hub_reg_notes_lookup "$_base" || true)"
+			[[ -n "$_note" ]] && _rsuffix="  # ${_note}"
 			_ROUTES_DISPLAY+="${_base} -> ${_rp}${_rsuffix}"$'\n'
 			;;
 	esac
@@ -104,7 +122,7 @@ if _hub_status_caddy_fetch_error; then
 elif [[ -n "$REGISTERED_APPS" ]]; then
 	while IFS= read -r _n || [[ -n "$_n" ]]; do
 		[[ -z "$_n" ]] && continue
-		printf '%s\n' "${_n,,}"
+		printf '%s\n' "$(hub_ascii_lower "$_n")"
 	done <<<"$REGISTERED_APPS" | sort -u
 else
 	echo "(No registered apps.)"
@@ -125,7 +143,8 @@ echo "=== Inferred active tunnel names (from -R remote port; 10080 = legacy root
 if [[ -z "$_tunnel_ps" ]]; then
 	echo "(None)"
 else
-	declare -A _hub_seen_rport=()
+	# String list (not indexed array): bash 3.2 + set -u treats empty "${arr[@]}" as unbound.
+	_hub_seen_rports="|"
 	while IFS= read -r pline || [[ -n "$pline" ]]; do
 		[[ -z "$pline" ]] && continue
 		rport="" lport=""
@@ -137,8 +156,8 @@ else
 			lport="${BASH_REMATCH[2]}"
 		fi
 		[[ -z "$rport" ]] && continue
-		[[ -n "${_hub_seen_rport[$rport]:-}" ]] && continue
-		_hub_seen_rport[$rport]=1
+		[[ "$_hub_seen_rports" == *"|${rport}|"* ]] && continue
+		_hub_seen_rports+="${rport}|"
 		if [[ "$rport" == "10080" ]]; then
 			printf '%s (local %s)\n' "legacy-root" "$lport"
 			continue
@@ -148,7 +167,7 @@ else
 			while IFS= read -r app || [[ -n "$app" ]]; do
 				[[ -z "$app" ]] && continue
 				_rp="$(hub_remote_port "$app")"
-				[[ "$_rp" == "$rport" ]] && _matched+=("${app,,}")
+				[[ "$_rp" == "$rport" ]] && _matched+=("$(hub_ascii_lower "$app")")
 			done <<<"$REGISTERED_APPS"
 		fi
 		if ((${#_matched[@]})); then
